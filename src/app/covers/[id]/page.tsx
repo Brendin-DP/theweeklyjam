@@ -17,6 +17,7 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
   const [submittedCovers, setSubmittedCovers] = useState([]);
   const [user, setUser] = useState(null);
   const [editingRecording, setEditingRecording] = useState(null);
+  const [hasUserSubmitted, setHasUserSubmitted] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -91,6 +92,13 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
         } else {
           console.log('No recordings found');
           setSubmittedCovers([]);
+        }
+
+        // Check if current user has already submitted a cover
+        if (user) {
+          const userHasSubmitted = submittedData?.some(recording => recording.user_id === user.id);
+          setHasUserSubmitted(userHasSubmitted || false);
+          console.log('User has submitted:', userHasSubmitted);
         }
       }
 
@@ -176,6 +184,7 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
       setSelectedGuitar("");
       setAudioFile(null);
       setEditingRecording(null);
+      setHasUserSubmitted(true);
       // Refresh submitted covers
       console.log('Refreshing recordings for cover_id:', params.id);
       const { data: submittedData, error: refreshError } = await supabase
@@ -233,15 +242,28 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
           <p className="text-gray-700 mb-1">Status: {cover.status}</p>
           <p className="text-gray-500 text-sm">Song #{cover.song_number}</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingRecording(null);
-            setShowModal(true);
-          }}
-          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
-        >
-          Submit Cover
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => {
+              setEditingRecording(null);
+              setShowModal(true);
+            }}
+            disabled={hasUserSubmitted}
+            className={`px-4 py-2 rounded-md ${
+              hasUserSubmitted 
+                ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+            title={hasUserSubmitted ? "You've already submitted your cover" : "Submit your cover"}
+          >
+            Submit Cover
+          </button>
+          {hasUserSubmitted && (
+            <div className="absolute -top-8 left-0 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+              You've already submitted your cover
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Submitted Covers */}
