@@ -9,6 +9,8 @@ const supabase = createClient(
 
 export default function CoversPage() {
   const [covers, setCovers] = useState([]);
+  const [allCovers, setAllCovers] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     async function fetchCovers() {
@@ -20,14 +22,37 @@ export default function CoversPage() {
         console.error("Error fetching covers:", error);
       } else {
         setCovers(data);
+        setAllCovers(data);
       }
     }
     fetchCovers();
   }, []);
 
+  useEffect(() => {
+    if (searchTerm.trim() === "") {
+      setCovers(allCovers);
+    } else {
+      const filtered = allCovers.filter((cover: any) =>
+        cover.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        cover.artist.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        cover.status.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setCovers(filtered);
+    }
+  }, [searchTerm, allCovers]);
+
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-4">Covers List</h1>
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-semibold">Covers List</h1>
+        <input
+          type="text"
+          placeholder="Search covers..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
+      </div>
       <table className="w-full table-auto border border-gray-300">
         <thead className="bg-gray-200">
           <tr>
