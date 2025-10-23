@@ -16,6 +16,7 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
   const [audioFile, setAudioFile] = useState(null);
   const [submittedCovers, setSubmittedCovers] = useState([]);
   const [user, setUser] = useState(null);
+  const [editingRecording, setEditingRecording] = useState(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -142,14 +143,29 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
       mp3_url: mp3Url
     });
 
-    const { data: insertData, error: insertError } = await supabase
-      .from("recordings")
-      .insert({
-        cover_id: params.id,
-        user_id: user.id,
-        guitar_id: selectedGuitar,
-        mp3_url: mp3Url
-      });
+    let result;
+    if (editingRecording) {
+      // Update existing recording
+      result = await supabase
+        .from("recordings")
+        .update({
+          guitar_id: selectedGuitar,
+          mp3_url: mp3Url
+        })
+        .eq("id", editingRecording.id);
+    } else {
+      // Insert new recording
+      result = await supabase
+        .from("recordings")
+        .insert({
+          cover_id: params.id,
+          user_id: user.id,
+          guitar_id: selectedGuitar,
+          mp3_url: mp3Url
+        });
+    }
+
+    const { data: insertData, error: insertError } = result;
 
     if (insertError) {
       console.error('Error submitting cover:', insertError);
@@ -159,6 +175,7 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
       setShowModal(false);
       setSelectedGuitar("");
       setAudioFile(null);
+      setEditingRecording(null);
       // Refresh submitted covers
       console.log('Refreshing recordings for cover_id:', params.id);
       const { data: submittedData, error: refreshError } = await supabase
@@ -217,7 +234,10 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
           <p className="text-gray-500 text-sm">Song #{cover.song_number}</p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => {
+            setEditingRecording(null);
+            setShowModal(true);
+          }}
           className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
         >
           Submit Cover
@@ -229,7 +249,25 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
         <h2 className="text-xl font-semibold mb-4">Submitted Covers</h2>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {submittedCovers.map((submission) => (
-            <div key={submission.id} className="bg-white rounded-lg shadow-md p-4 border">
+            <div key={submission.id} className="bg-white rounded-lg shadow-md p-4 border relative">
+              {/* Edit button - only show for current user's submissions */}
+              {submission.user_id === user?.id && (
+                <button
+                  onClick={() => {
+                    setEditingRecording(submission);
+                    setSelectedGuitar(submission.guitar_id);
+                    setAudioFile(null);
+                    setShowModal(true);
+                  }}
+                  className="absolute top-2 right-2 p-1 text-gray-500 hover:text-gray-700"
+                  title="Edit recording"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                  </svg>
+                </button>
+              )}
+              
               <h3 className="font-semibold">{submission.profiles?.display_name || 'Unknown User'}</h3>
               <p className="text-gray-600 text-sm mb-2">Guitar: {submission.guitars?.name || 'Unknown'}</p>
               {submission.mp3_url && submission.mp3_url !== 'no-audio-uploaded' && (
@@ -249,7 +287,9 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">Submit Your Cover</h2>
+            <h2 className="text-xl font-semibold mb-4">
+              {editingRecording ? 'Edit Your Cover' : 'Submit Your Cover'}
+            </h2>
             <form onSubmit={handleSubmit}>
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-2">Select Guitar</label>
@@ -269,13 +309,28 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
               </div>
               
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">Upload Audio (Optional)</label>
+                <label className="block text-sm font-medium mb-2">
+                  {editingRecording ? 'Replace Audio (Optional)' : 'Upload Audio (Optional)'}
+                </label>
+                {editingRecording && editingRecording.mp3_url && editingRecording.mp3_url !== 'no-audio-uploaded' && (
+                  <div className="mb-2 p-2 bg-gray-100 rounded text-sm">
+                    <p className="text-gray-600">Current audio:</p>
+                    <audio controls className="w-full mt-1">
+                      <source src={`${supabase.storage.from('cover-audio').getPublicUrl(editingRecording.mp3_url).data.publicUrl}`} />
+                    </audio>
+                  </div>
+                )}
                 <input
                   type="file"
                   accept="audio/*"
                   onChange={(e) => setAudioFile(e.target.files[0])}
                   className="w-full p-2 border border-gray-300 rounded-md"
                 />
+                {editingRecording && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Leave empty to keep current audio, or select a new file to replace it.
+                  </p>
+                )}
               </div>
 
               <div className="flex justify-end gap-2">
@@ -290,7 +345,7 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
                   type="submit"
                   className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
                 >
-                  Submit
+                  {editingRecording ? 'Update' : 'Submit'}
                 </button>
               </div>
             </form>
