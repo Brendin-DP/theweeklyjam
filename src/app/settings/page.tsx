@@ -15,8 +15,7 @@ export default function SettingsPage() {
   const [showAddGuitar, setShowAddGuitar] = useState(false);
   const [editingGuitar, setEditingGuitar] = useState(null);
   const [newGuitarName, setNewGuitarName] = useState("");
-  const [newGuitarBrand, setNewGuitarBrand] = useState("");
-  const [newGuitarModel, setNewGuitarModel] = useState("");
+  const [newGuitarImageUrl, setNewGuitarImageUrl] = useState("");
 
   useEffect(() => {
     const fetchData = async () => {
@@ -62,8 +61,7 @@ export default function SettingsPage() {
         .insert({
           user_id: user.id,
           name: newGuitarName.trim(),
-          brand: newGuitarBrand.trim() || null,
-          model: newGuitarModel.trim() || null
+          image_url: newGuitarImageUrl.trim() || null
         });
 
       if (error) {
@@ -80,8 +78,7 @@ export default function SettingsPage() {
         
         // Reset form
         setNewGuitarName("");
-        setNewGuitarBrand("");
-        setNewGuitarModel("");
+        setNewGuitarImageUrl("");
         setShowAddGuitar(false);
       }
     } catch (error) {
@@ -146,9 +143,31 @@ export default function SettingsPage() {
     return <div className="text-center py-8">Loading settings...</div>;
   }
 
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Error logging out:', error);
+        alert('Error logging out: ' + error.message);
+      } else {
+        window.location.href = '/login';
+      }
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
+  };
+
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-6">Settings</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-semibold">Settings</h1>
+        <button
+          onClick={handleLogout}
+          className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700"
+        >
+          Logout
+        </button>
+      </div>
       
       {/* Profile Section */}
       <div className="bg-white rounded-lg shadow-md p-6 border mb-6">
@@ -181,13 +200,20 @@ export default function SettingsPage() {
           <div className="space-y-3">
             {guitars.map((guitar) => (
               <div key={guitar.id} className="flex justify-between items-center p-3 border rounded-md">
-                <div>
-                  <h3 className="font-medium">{guitar.name}</h3>
-                  {(guitar.brand || guitar.model) && (
-                    <p className="text-sm text-gray-500">
-                      {guitar.brand} {guitar.model}
-                    </p>
+                <div className="flex items-center gap-3">
+                  {guitar.image_url && (
+                    <img 
+                      src={guitar.image_url} 
+                      alt={guitar.name}
+                      className="w-12 h-12 object-cover rounded"
+                    />
                   )}
+                  <div>
+                    <h3 className="font-medium">{guitar.name}</h3>
+                    {guitar.image_url && (
+                      <p className="text-sm text-gray-500">Image available</p>
+                    )}
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -229,24 +255,13 @@ export default function SettingsPage() {
                 </div>
                 
                 <div className="mb-4">
-                  <label className="block text-sm font-medium mb-2">Brand (Optional)</label>
+                  <label className="block text-sm font-medium mb-2">Image URL (Optional)</label>
                   <input
-                    type="text"
-                    value={newGuitarBrand}
-                    onChange={(e) => setNewGuitarBrand(e.target.value)}
+                    type="url"
+                    value={newGuitarImageUrl}
+                    onChange={(e) => setNewGuitarImageUrl(e.target.value)}
                     className="w-full p-2 border border-gray-300 rounded-md"
-                    placeholder="e.g., Fender"
-                  />
-                </div>
-                
-                <div className="mb-4">
-                  <label className="block text-sm font-medium mb-2">Model (Optional)</label>
-                  <input
-                    type="text"
-                    value={newGuitarModel}
-                    onChange={(e) => setNewGuitarModel(e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-md"
-                    placeholder="e.g., Stratocaster"
+                    placeholder="https://example.com/guitar-image.jpg"
                   />
                 </div>
 
@@ -256,8 +271,7 @@ export default function SettingsPage() {
                     onClick={() => {
                       setShowAddGuitar(false);
                       setNewGuitarName("");
-                      setNewGuitarBrand("");
-                      setNewGuitarModel("");
+                      setNewGuitarImageUrl("");
                     }}
                     className="px-4 py-2 text-gray-600 hover:text-gray-800"
                   >
