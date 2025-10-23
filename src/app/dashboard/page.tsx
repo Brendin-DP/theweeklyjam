@@ -14,6 +14,7 @@ export default function DashboardPage() {
   const [topArtists, setTopArtists] = useState([]);
   const [brendinGuitars, setBrendinGuitars] = useState([]);
   const [raymondGuitars, setRaymondGuitars] = useState([]);
+  const [myGuitars, setMyGuitars] = useState([]);
   const [uniqueArtistsCount, setUniqueArtistsCount] = useState(0);
 
   useEffect(() => {
@@ -63,60 +64,115 @@ export default function DashboardPage() {
         // Fetch recordings to analyze guitar usage
         const { data: recordings, error: recordingsError } = await supabase
           .from('recordings')
-          .select(`
-            user_id,
-            guitar_id,
-            guitars(name),
-            profiles(display_name)
-          `);
+          .select('user_id, guitar_id');
         
         if (recordingsError) {
           console.error('Error fetching recordings:', recordingsError);
         } else {
-          // Find Brendin's user ID
-          const { data: brendinProfile } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('display_name', 'Brendin')
-            .single();
+          console.log('All recordings:', recordings);
           
-          // Find Raymond's user ID
-          const { data: raymondProfile } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('display_name', 'Raymond')
-            .single();
-
-          if (brendinProfile) {
-            const brendinRecordings = recordings?.filter(r => r.user_id === brendinProfile.id) || [];
-            const brendinGuitarCounts = {};
-            brendinRecordings.forEach(recording => {
-              if (recording.guitars?.name) {
-                brendinGuitarCounts[recording.guitars.name] = (brendinGuitarCounts[recording.guitars.name] || 0) + 1;
+          // Fetch all guitars
+          const { data: guitars, error: guitarsError } = await supabase
+            .from('guitars')
+            .select('id, name, user_id');
+          
+          if (guitarsError) {
+            console.error('Error fetching guitars:', guitarsError);
+          } else {
+            console.log('All guitars:', guitars);
+            
+            // Fetch all profiles to get user names
+            const { data: profiles, error: profilesError } = await supabase
+              .from('profiles')
+              .select('id, display_name');
+            
+            if (profilesError) {
+              console.error('Error fetching profiles:', profilesError);
+            } else {
+              console.log('All profiles:', profiles);
+              
+              // Create lookup maps
+              const guitarMap = {};
+              guitars?.forEach(guitar => {
+                guitarMap[guitar.id] = guitar;
+              });
+              
+              const profileMap = {};
+              profiles?.forEach(profile => {
+                profileMap[profile.id] = profile;
+              });
+              
+              // Group recordings by user and analyze their guitar usage
+              const userGuitarCounts = {};
+              
+              recordings?.forEach(recording => {
+                if (recording.user_id && recording.guitar_id) {
+                  const userId = recording.user_id;
+                  const guitarId = recording.guitar_id;
+                  const guitar = guitarMap[guitarId];
+                  const profile = profileMap[userId];
+                  
+                  if (guitar && profile) {
+                    const userName = profile.display_name || 'Unknown User';
+                    const guitarName = guitar.name;
+                    
+                    if (!userGuitarCounts[userId]) {
+                      userGuitarCounts[userId] = {
+                        userName,
+                        guitars: {}
+                      };
+                    }
+                    
+                    userGuitarCounts[userId].guitars[guitarName] = 
+                      (userGuitarCounts[userId].guitars[guitarName] || 0) + 1;
+                  }
+                }
+              });
+              
+              console.log('User guitar counts:', userGuitarCounts);
+              
+              // Find current user's recordings
+              if (user) {
+                const myEntry = userGuitarCounts[user.id];
+                if (myEntry) {
+                  const sortedMyGuitars = Object.entries(myEntry.guitars)
+                    .map(([guitar, count]) => ({ guitar, count }))
+                    .sort((a, b) => b.count - a.count);
+                  setMyGuitars(sortedMyGuitars);
+                  console.log('My guitars:', sortedMyGuitars);
+                } else {
+                  console.log('No recordings found for current user');
+                }
               }
-            });
-            
-            const sortedBrendinGuitars = Object.entries(brendinGuitarCounts)
-              .map(([guitar, count]) => ({ guitar, count }))
-              .sort((a, b) => b.count - a.count);
-            
-            setBrendinGuitars(sortedBrendinGuitars);
-          }
-
-          if (raymondProfile) {
-            const raymondRecordings = recordings?.filter(r => r.user_id === raymondProfile.id) || [];
-            const raymondGuitarCounts = {};
-            raymondRecordings.forEach(recording => {
-              if (recording.guitars?.name) {
-                raymondGuitarCounts[recording.guitars.name] = (raymondGuitarCounts[recording.guitars.name] || 0) + 1;
+              
+              // Find Brendin's recordings
+              const brendinEntry = Object.entries(userGuitarCounts).find(([userId, data]) => 
+                data.userName === 'Brendin'
+              );
+              
+              if (brendinEntry) {
+                const [, brendinData] = brendinEntry;
+                const sortedBrendinGuitars = Object.entries(brendinData.guitars)
+                  .map(([guitar, count]) => ({ guitar, count }))
+                  .sort((a, b) => b.count - a.count);
+                setBrendinGuitars(sortedBrendinGuitars);
+                console.log('Brendin guitars:', sortedBrendinGuitars);
               }
-            });
-            
-            const sortedRaymondGuitars = Object.entries(raymondGuitarCounts)
-              .map(([guitar, count]) => ({ guitar, count }))
-              .sort((a, b) => b.count - a.count);
-            
-            setRaymondGuitars(sortedRaymondGuitars);
+              
+              // Find Raymond's recordings
+              const raymondEntry = Object.entries(userGuitarCounts).find(([userId, data]) => 
+                data.userName === 'Raymond'
+              );
+              
+              if (raymondEntry) {
+                const [, raymondData] = raymondEntry;
+                const sortedRaymondGuitars = Object.entries(raymondData.guitars)
+                  .map(([guitar, count]) => ({ guitar, count }))
+                  .sort((a, b) => b.count - a.count);
+                setRaymondGuitars(sortedRaymondGuitars);
+                console.log('Raymond guitars:', sortedRaymondGuitars);
+              }
+            }
           }
         }
 
@@ -158,12 +214,12 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Brendin's Top Guitar */}
+        {/* My Top Guitar */}
         <div className="bg-white rounded-lg shadow-md p-6 border">
-          <h2 className="text-lg font-semibold mb-4">Brendin's Top Guitar</h2>
-          {brendinGuitars.length > 0 ? (
+          <h2 className="text-lg font-semibold mb-4">My Top Guitar</h2>
+          {myGuitars.length > 0 ? (
             <div className="space-y-2">
-              {brendinGuitars.map((item, index) => (
+              {myGuitars.map((item, index) => (
                 <div key={item.guitar} className="flex justify-between items-center">
                   <span className="text-sm font-medium">#{index + 1} {item.guitar}</span>
                   <span className="text-sm text-gray-500">{item.count}</span>
@@ -171,7 +227,7 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : (
-            <p className="text-gray-500 text-sm">No data available</p>
+            <p className="text-gray-500 text-sm">No recordings found</p>
           )}
         </div>
 
