@@ -94,6 +94,8 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
           setSubmittedCovers([]);
         }
 
+
+
         // Check if current user has already submitted a cover
         if (user) {
           const userHasSubmitted = submittedData?.some(recording => recording.user_id === user.id);
@@ -126,10 +128,12 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
     if (audioFile && audioFile.size > 0) {
       console.log('Uploading audio file...');
       const fileExt = audioFile.name.split('.').pop();
+      console.log(audioFile.name); //it's correctly building the name
       const fileName = `${user.id}_${Date.now()}.${fileExt}`;
+      console.log("hello world"); //it's correctly building the name
       const { data, error } = await supabase.storage
-        .from('cover-audio')
-        .upload(fileName, audioFile);
+        .from('recordings-media')
+        .upload(fileName, audioFile, { upsert: true });
       
       if (error) {
         console.error('Error uploading audio:', error);
@@ -294,7 +298,7 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
               <p className="text-gray-600 text-sm mb-2">Guitar: {submission.guitars?.name || 'Unknown'}</p>
               {submission.mp3_url && submission.mp3_url !== 'no-audio-uploaded' && (
                 <audio controls className="w-full">
-                  <source src={`${supabase.storage.from('cover-audio').getPublicUrl(submission.mp3_url).data.publicUrl}`} />
+                  <source src={`${supabase.storage.from('recordings-media').getPublicUrl(submission.mp3_url).data.publicUrl}`} />
                 </audio>
               )}
               {submission.mp3_url === 'no-audio-uploaded' && (
@@ -338,7 +342,7 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
                   <div className="mb-2 p-2 bg-gray-100 rounded text-sm">
                     <p className="text-gray-600">Current audio:</p>
                     <audio controls className="w-full mt-1">
-                      <source src={`${supabase.storage.from('cover-audio').getPublicUrl(editingRecording.mp3_url).data.publicUrl}`} />
+                      <source src={`${supabase.storage.from('recordings-media').getPublicUrl(editingRecording.mp3_url).data.publicUrl}`} />
                     </audio>
                   </div>
                 )}
