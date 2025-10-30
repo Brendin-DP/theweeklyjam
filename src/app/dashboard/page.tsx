@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import Link from "next/link";
 import { backfillAlbumArt } from "@/lib/backfillAlbumArt";
 
 // Supabase config
@@ -135,19 +136,19 @@ useEffect(() => {
           setRaymondGuitars(getSortedGuitars(raymondId));
         }
 
-        // Featured cover (status = Planned)
-        const { data: planned, error: plannedError } = await supabase
+        // Featured cover: song_status = active
+        const { data: activeCovers, error: activeErr } = await supabase
           .from("covers")
-          .select("id, title, artist, status, song_number, album_art_url")
-          .eq("status", "Planned")
+          .select("id, title, artist, song_status, song_number, album_art_url")
+          .eq("song_status", "active")
           .order("song_number", { ascending: true })
           .limit(1);
-        if (!plannedError && planned && planned.length > 0) {
-          setFeaturedCover(planned[0]);
+        if (!activeErr && activeCovers && activeCovers.length > 0) {
+          setFeaturedCover(activeCovers[0]);
           const { count } = await supabase
             .from("covers")
             .select("id", { count: "exact", head: true })
-            .eq("artist", planned[0].artist);
+            .eq("artist", activeCovers[0].artist);
           setFeaturedArtistOccurrences(count || 0);
         } else {
           setFeaturedCover(null);
@@ -172,8 +173,11 @@ useEffect(() => {
       <h1 className="text-2xl font-semibold mb-6">
         Welcome to your Dashboard, {profile?.display_name || user?.email}
       </h1>
-      {/* Featured Song (Planned) */}
+      {/* Featured Song (Active) */}
       <div className="mb-6 rounded-lg border bg-white p-6 shadow-md">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Featured Song</h2>
+        </div>
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-4">
             <div className="h-20 w-20 overflow-hidden rounded-md border bg-gray-100">
@@ -193,10 +197,20 @@ useEffect(() => {
                 <h2 className="text-xl font-semibold">{featuredCover?.title ?? 'No Planned song'}</h2>
               </div>
               <p className="text-gray-700">Artist: {featuredCover?.artist ?? '—'}</p>
-              <p className="text-xs text-gray-500 mt-1">Artist occurrences: {featuredArtistOccurrences}</p>
+              {featuredCover && (
+                <p className="text-xs text-gray-500 mt-1">Artist occurrences: {featuredArtistOccurrences}</p>
+              )}
+              
             </div>
           </div>
-          <div className="relative">
+          <div className="relative flex items-center gap-2">
+            <Link
+              href={featuredCover ? `/covers/${featuredCover.id}` : "#"}
+              className={`rounded-md px-3 py-2 text-sm font-medium shadow-sm ${featuredCover ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-600 cursor-not-allowed pointer-events-none'}`}
+              title={featuredCover ? 'Submit Cover' : 'No active song'}
+            >
+              Submit Cover
+            </Link>
             <button
               type="button"
               onClick={() => setIsFeaturedMenuOpen((v) => !v)}
@@ -257,8 +271,8 @@ useEffect(() => {
                       // Refresh featured
                       const { data: planned } = await supabase
                         .from('covers')
-                        .select('id, title, artist, status, song_number, album_art_url')
-                        .eq('status', 'Planned')
+                        .select('id, title, artist, song_status, song_number, album_art_url')
+                      .eq('song_status', 'active')
                         .order('song_number', { ascending: true })
                         .limit(1);
                       if (planned && planned.length > 0) {
