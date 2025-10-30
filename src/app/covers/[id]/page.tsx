@@ -8,16 +8,23 @@ const supabase = createClient(
 );
 
 export default function CoverDetailPage({ params }: { params: { id: string } }) {
-  const [cover, setCover] = useState(null);
+  type Cover = { id: string; title: string; artist: string; status: string; song_number: number; album_art_url?: string | null };
+  type Guitar = { id: string; name: string };
+  type Profile = { display_name: string };
+  type Recording = { id: string; cover_id: string; user_id: string; guitar_id: string; mp3_url: string };
+  type RecordingWithDetails = Recording & { guitars?: { name: string } | null; profiles?: { display_name: string } | null };
+
+  const [cover, setCover] = useState<Cover | null>(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [guitars, setGuitars] = useState([]);
-  const [selectedGuitar, setSelectedGuitar] = useState("");
-  const [audioFile, setAudioFile] = useState(null);
-  const [submittedCovers, setSubmittedCovers] = useState([]);
-  const [user, setUser] = useState(null);
-  const [editingRecording, setEditingRecording] = useState(null);
+  const [guitars, setGuitars] = useState<Guitar[]>([]);
+  const [selectedGuitar, setSelectedGuitar] = useState<string>("");
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [submittedCovers, setSubmittedCovers] = useState<RecordingWithDetails[]>([]);
+  const [user, setUser] = useState<any>(null);
+  const [editingRecording, setEditingRecording] = useState<RecordingWithDetails | null>(null);
   const [hasUserSubmitted, setHasUserSubmitted] = useState(false);
+  const [artistOccurrenceCount, setArtistOccurrenceCount] = useState(0);
 
   useEffect(() => {
     async function fetchData() {
@@ -32,6 +39,16 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
         console.error("Error loading cover:", coverError);
       } else {
         setCover(coverData);
+        // Fetch artist occurrence count across all covers
+        if (coverData?.artist) {
+          const { count } = await supabase
+            .from("covers")
+            .select("id", { count: "exact", head: true })
+            .eq("artist", coverData.artist);
+          setArtistOccurrenceCount(count || 0);
+        } else {
+          setArtistOccurrenceCount(0);
+        }
       }
 
       // Fetch user
@@ -110,7 +127,7 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
     fetchData();
   }, [params.id]);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     console.log('Form submitted!', { selectedGuitar, user, audioFile });
     
@@ -239,40 +256,47 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold mb-2">{cover.title}</h1>
-          <p className="text-gray-700 mb-1">Artist: {cover.artist}</p>
-          <p className="text-gray-700 mb-1">Status: {cover.status}</p>
-          <p className="text-gray-500 text-sm">Song #{cover.song_number}</p>
-        </div>
-        <div className="relative">
-          <button
-            onClick={() => {
-              setEditingRecording(null);
-              setShowModal(true);
-            }}
-            disabled={hasUserSubmitted}
-            className={`px-4 py-2 rounded-md ${
-              hasUserSubmitted 
-                ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
-            title={hasUserSubmitted ? "You've already submitted your cover" : "Submit your cover"}
-          >
-            Submit Cover
-          </button>
-          {hasUserSubmitted && (
-            <div className="absolute -top-8 left-0 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 hover:opacity-100 transition-opacity duration-200 pointer-events-none">
-              You've already submitted your cover
+      <div className="mb-6 rounded-lg border bg-white p-6 shadow-md">
+        <div className="flex items-start gap-6">
+          <div className="h-32 w-32 flex-shrink-0 overflow-hidden rounded-md border bg-gray-100">
+            {cover.album_art_url ? (
+              <img src={cover.album_art_url} alt={`${cover.title} album art`} className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">No Art</div>
+            )}
+          </div>
+          <div className="flex-1">
+            <div className="mb-2 flex items-start justify-between gap-4">
+              <h1 className="text-2xl font-semibold">{cover.title}</h1>
+              <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-700">
+                Artist occurrences: {artistOccurrenceCount}
+              </span>
             </div>
-          )}
+            <p className="text-gray-700 mb-1">Artist: {cover.artist}</p>
+            <p className="text-gray-700 mb-1">Status: {cover.status}</p>
+            <p className="text-gray-500 text-sm">Song #{cover.song_number}</p>
+          </div>
         </div>
       </div>
 
       {/* Submitted Covers */}
       <div className="mt-8">
-        <h2 className="text-xl font-semibold mb-4">Submitted Covers</h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Submitted Covers</h2>
+          <div className="relative">
+            <button
+              onClick={() => {
+                setEditingRecording(null);
+                setShowModal(true);
+              }}
+              disabled={hasUserSubmitted}
+              className={`px-4 py-2 rounded-md ${hasUserSubmitted ? 'bg-gray-400 text-gray-200 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+              title={hasUserSubmitted ? "You've already submitted your cover" : "Submit your cover"}
+            >
+              Submit Cover
+            </button>
+          </div>
+        </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {submittedCovers.map((submission) => (
             <div key={submission.id} className="bg-white rounded-lg shadow-md p-4 border relative">
@@ -349,7 +373,7 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
                 <input
                   type="file"
                   accept="audio/*"
-                  onChange={(e) => setAudioFile(e.target.files[0])}
+                  onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
                   className="w-full p-2 border border-gray-300 rounded-md"
                 />
                 {editingRecording && (
