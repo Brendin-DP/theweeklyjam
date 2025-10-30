@@ -26,6 +26,10 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
   const [editingRecording, setEditingRecording] = useState<RecordingWithDetails | null>(null);
   const [hasUserSubmitted, setHasUserSubmitted] = useState(false);
   const [artistOccurrenceCount, setArtistOccurrenceCount] = useState(0);
+  const [isDeleteRecOpen, setIsDeleteRecOpen] = useState(false);
+  const [isDeletingRec, setIsDeletingRec] = useState(false);
+  const [deletingRecording, setDeletingRecording] = useState<RecordingWithDetails | null>(null);
+  const [deleteRecError, setDeleteRecError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -349,20 +353,35 @@ if (!coverData.album_art_url && coverData.artist && coverData.title) {
             <div key={submission.id} className="bg-white rounded-lg shadow-md p-4 border relative">
               {/* Edit button - only show for current user's submissions */}
               {submission.user_id === user?.id && (
-                <button
-                  onClick={() => {
-                    setEditingRecording(submission);
-                    setSelectedGuitar(submission.guitar_id);
-                    setAudioFile(null);
-                    setShowModal(true);
-                  }}
-                  className="absolute top-2 right-2 p-1 text-gray-500 hover:text-gray-700"
-                  title="Edit recording"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                  </svg>
-                </button>
+                <div className="absolute top-2 right-2 flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setEditingRecording(submission);
+                      setSelectedGuitar(submission.guitar_id);
+                      setAudioFile(null);
+                      setShowModal(true);
+                    }}
+                    className="p-1 text-gray-500 hover:text-gray-700"
+                    title="Edit recording"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDeletingRecording(submission);
+                      setDeleteRecError(null);
+                      setIsDeleteRecOpen(true);
+                    }}
+                    className="p-1 text-red-500 hover:text-red-600"
+                    title="Delete recording"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m2 0H7m3-3h4a1 1 0 011 1v2H9V5a1 1 0 011-1z" />
+                    </svg>
+                  </button>
+                </div>
               )}
               
               <h3 className="font-semibold">{submission.profiles?.display_name || 'Unknown User'}</h3>
@@ -446,6 +465,86 @@ if (!coverData.album_art_url && coverData.artist && coverData.title) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete recording confirm modal */}
+      {isDeleteRecOpen && deletingRecording && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-lg font-semibold text-red-600 mb-2">Delete Your Submission</h2>
+            <p className="text-sm text-gray-700 mb-4">Are you sure you want to delete this submitted cover?</p>
+            {deleteRecError && <p className="text-sm text-red-600 mb-3">{deleteRecError}</p>}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => !isDeletingRec && setIsDeleteRecOpen(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                disabled={isDeletingRec}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!deletingRecording) return;
+                  setIsDeletingRec(true);
+                  setDeleteRecError(null);
+                  try {
+                    const { error } = await supabase
+                      .from('recordings')
+                      .delete()
+                      .eq('id', deletingRecording.id)
+                      .eq('user_id', user?.id ?? '');
+                    if (error) {
+                      setDeleteRecError(error.message ?? 'Failed to delete');
+                      return;
+                    }
+                    // refresh submissions
+                    const { data: submittedData, error: refreshError } = await supabase
+                      .from('recordings')
+                      .select('*')
+                      .eq('cover_id', params.id);
+                    if (refreshError) {
+                      setDeleteRecError(refreshError.message ?? 'Failed to refresh');
+                      return;
+                    }
+                    if (submittedData && submittedData.length > 0) {
+                      const recordingsWithDetails = await Promise.all(
+                        submittedData.map(async (recording) => {
+                          const { data: guitarData } = await supabase
+                            .from('guitars')
+                            .select('name')
+                            .eq('id', recording.guitar_id)
+                            .single();
+                          const { data: profileData } = await supabase
+                            .from('profiles')
+                            .select('display_name')
+                            .eq('id', recording.user_id)
+                            .single();
+                          return { ...recording, guitars: guitarData, profiles: profileData };
+                        })
+                      );
+                      setSubmittedCovers(recordingsWithDetails as any);
+                    } else {
+                      setSubmittedCovers([]);
+                    }
+                    // update hasUserSubmitted
+                    const stillHas = (submittedData || []).some(r => r.user_id === user?.id);
+                    setHasUserSubmitted(stillHas);
+                    setIsDeleteRecOpen(false);
+                    setDeletingRecording(null);
+                  } finally {
+                    setIsDeletingRec(false);
+                  }
+                }}
+                className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 disabled:opacity-50"
+                disabled={isDeletingRec}
+              >
+                {isDeletingRec ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}
