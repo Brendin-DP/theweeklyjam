@@ -15,6 +15,7 @@ export default function CoversPage() {
     title: string;
     artist: string;
     status: string;
+    album_art_url?: string | null;
   };
 
   const [covers, setCovers] = useState<Cover[]>([]);
@@ -45,7 +46,7 @@ export default function CoversPage() {
     const [{ data, error }, recordingsResult] = await Promise.all([
       supabase
         .from("covers")
-        .select("id, song_number, title, artist, status")
+        .select("id, song_number, title, artist, status, album_art_url")
         .order("song_number", { ascending: true }),
       supabase
         .from("recordings")
@@ -106,16 +107,15 @@ export default function CoversPage() {
           announced_at: new Date().toISOString(),
           announcer_id: userId,
         };
-        const { error, data: inserted } = await supabase
+        const { error } = await supabase
           .from("covers")
-          .insert([insertPayload])
-          .select("id, album_art_url");
+          .insert([insertPayload]);
         if (error) {
           setFormError(error.message ?? "Failed to add cover.");
           setIsSubmitting(false);
           return;
         }
-        // no-op
+        // Success; list will refresh below
       } else if (modalMode === "edit" && editingCoverId != null) {
         // Only update album art if a manual URL is provided; otherwise leave existing
         const shouldUpdateAlbumArt = Boolean(formValues.album_art_url.trim());
@@ -129,17 +129,16 @@ export default function CoversPage() {
         if (shouldUpdateAlbumArt) {
           updatePayload.album_art_url = resolvedAlbumArtUrl;
         }
-        const { error, data: updated } = await supabase
+        const { error } = await supabase
           .from("covers")
           .update(updatePayload)
-          .eq("id", editingCoverId)
-          .select("id, album_art_url");
+          .eq("id", editingCoverId);
         if (error) {
           setFormError(error.message ?? "Failed to update cover.");
           setIsSubmitting(false);
           return;
         }
-        // no-op
+        // Success; list will refresh below
       }
       // Refresh list
       await loadCoversAndLocks();
@@ -240,6 +239,7 @@ export default function CoversPage() {
         <thead className="bg-gray-200">
           <tr>
             <th className="px-4 py-2 text-left">#</th>
+            <th className="px-4 py-2 text-left">Art</th>
             <th className="px-4 py-2 text-left">Title</th>
             <th className="px-4 py-2 text-left">Artist</th>
             <th className="px-4 py-2 text-left">Status</th>
@@ -250,6 +250,19 @@ export default function CoversPage() {
           {filteredCovers.map((cover: any) => (
             <tr key={cover.id} className="border-t border-gray-300 hover:bg-gray-100">
               <td className="px-4 py-2">{cover.song_number}</td>
+              <td className="px-4 py-2">
+                {(() => {
+                  const raw = cover.album_art_url as string | null | undefined;
+                  if (!raw) return null;
+                  const url = typeof raw === 'string' && (raw.startsWith('http://') || raw.startsWith('https://'))
+                    ? raw
+                    : supabase.storage.from('album-art').getPublicUrl(String(raw)).data.publicUrl;
+                  if (!url) return null;
+                  return (
+                    <img src={url} alt="album art" className="h-8 w-8 rounded object-cover" />
+                  );
+                })()}
+              </td>
               <td className="px-4 py-2">
                 <Link href={`/covers/${cover.id}`} className="text-blue-600 hover:underline">
                   {cover.title}
