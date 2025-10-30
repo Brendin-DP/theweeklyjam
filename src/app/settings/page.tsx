@@ -66,7 +66,7 @@ export default function SettingsPage() {
         console.error("No user found. Cannot add guitar.");
         return;
       }
-      
+
       const { error } = await supabase
         .from('guitars')
         .insert({
@@ -97,7 +97,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleEditGuitar = async (guitar) => {
+  const handleEditGuitar = async (guitar: Guitar) => {
     const newName = prompt('Enter new guitar name:', guitar.name);
     if (newName && newName.trim() !== guitar.name) {
       try {
@@ -124,7 +124,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleDeleteGuitar = async (guitar) => {
+  const handleDeleteGuitar = async (guitar: Guitar) => {
     if (confirm(`Are you sure you want to delete "${guitar.name}"?`)) {
       try {
         const { error } = await supabase
