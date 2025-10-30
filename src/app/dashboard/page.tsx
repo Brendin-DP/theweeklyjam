@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { backfillAlbumArt } from "@/lib/backfillAlbumArt";
 
 // Supabase config
 const supabase = createClient(
@@ -36,6 +37,22 @@ export default function DashboardPage() {
             .single();
           setProfile(profile);
         }
+
+        // Fetch all covers to backfill album art
+
+        // 🎨 Backfill album art for missing covers (admin-only)
+if (user?.email === "your@email.com") {
+  backfillAlbumArt();
+
+  const [backfillDone, setBackfillDone] = useState(false);
+
+useEffect(() => {
+  if (user && !backfillDone) {
+    backfillAlbumArt();
+    setBackfillDone(true);
+  }
+}, [user]);
+}
 
         // Fetch all covers to analyze artist stats
         const { data: covers, error: coversError } = await supabase

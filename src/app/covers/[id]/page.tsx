@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { autoFetchAndStoreAlbumArt } from "@/lib/autoAlbumArt";
 
 const supabase = createClient(
   "https://ktctqojjjdxwizztkkmc.supabase.co",
@@ -39,6 +40,30 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
         console.error("Error loading cover:", coverError);
       } else {
         setCover(coverData);
+
+//Fetching album art from iTunes API
+
+// 🎨 Auto-fetch album art if missing
+if (!coverData.album_art_url && coverData.artist && coverData.title) {
+  try {
+    console.log("Auto-fetching album art for:", coverData.title);
+    await autoFetchAndStoreAlbumArt(coverData.artist, coverData.title, coverData.id);
+    
+    // Re-fetch cover to update with new art URL
+    const { data: refreshedCover } = await supabase
+      .from("covers")
+      .select("*")
+      .eq("id", coverData.id)
+      .single();
+
+    if (refreshedCover) {
+      setCover(refreshedCover);
+    }
+  } catch (err) {
+    console.error("Album art fetch failed:", err);
+  }
+}
+
         // Fetch artist occurrence count across all covers
         if (coverData?.artist) {
           const { count } = await supabase
