@@ -47,8 +47,10 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
 if (!coverData.album_art_url && coverData.artist && coverData.title) {
   try {
     console.log("Auto-fetching album art for:", coverData.title);
-    await autoFetchAndStoreAlbumArt(coverData.artist, coverData.title, coverData.id);
+    console.log("Uploading to album-art:", coverData.artist, coverData.title);
+    await autoFetchAndStoreAlbumArt(coverData.artist, coverData.title, coverData.id, supabase);
     
+
     // Re-fetch cover to update with new art URL
     const { data: refreshedCover } = await supabase
       .from("covers")
@@ -279,13 +281,26 @@ if (!coverData.album_art_url && coverData.artist && coverData.title) {
     return <div className="text-red-500">Error loading cover details</div>;
   }
 
+  // Normalize album art URL: if DB contains a storage path, convert to public URL
+  const albumArtDisplayUrl = (() => {
+    const raw = cover.album_art_url || null;
+    if (!raw) return null;
+    if (typeof raw === 'string' && (raw.startsWith('http://') || raw.startsWith('https://'))) return raw;
+    // Assume raw is a storage path
+    try {
+      return supabase.storage.from('album-art').getPublicUrl(String(raw)).data.publicUrl;
+    } catch {
+      return null;
+    }
+  })();
+
   return (
     <div>
       <div className="mb-6 rounded-lg border bg-white p-6 shadow-md">
         <div className="flex items-start gap-6">
           <div className="h-32 w-32 flex-shrink-0 overflow-hidden rounded-md border bg-gray-100">
-            {cover.album_art_url ? (
-              <img src={cover.album_art_url} alt={`${cover.title} album art`} className="h-full w-full object-cover" />
+            {albumArtDisplayUrl ? (
+              <img src={albumArtDisplayUrl} alt={`${cover.title} album art`} className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">No Art</div>
             )}

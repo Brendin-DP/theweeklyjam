@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * --- SETUP ---
@@ -45,7 +45,7 @@ export async function fetchAlbumArt(artist: string, song: string): Promise<strin
 /**
  * Upload image to Supabase Storage and return the public URL
  */
-export async function uploadAlbumArtToSupabase(imageUrl: string, coverId: string): Promise<string | null> {
+export async function uploadAlbumArtToSupabase(imageUrl: string, coverId: string, client?: SupabaseClient): Promise<string | null> {
   try {
     const res = await fetch(imageUrl);
     if (!res.ok) throw new Error(`Failed to download image: ${res.status}`);
@@ -53,7 +53,8 @@ export async function uploadAlbumArtToSupabase(imageUrl: string, coverId: string
 
     const fileName = `${coverId}_${Date.now()}.jpg`;
 
-    const { data, error } = await supabase.storage
+    const sc = client ?? supabase;
+    const { data, error } = await sc.storage
       .from("album-art")
       .upload(fileName, blob, {
         contentType: "image/jpeg",
@@ -65,7 +66,7 @@ export async function uploadAlbumArtToSupabase(imageUrl: string, coverId: string
       return null;
     }
 
-    const publicUrl = supabase
+    const publicUrl = sc
       .storage
       .from("album-art")
       .getPublicUrl(data.path)
@@ -82,7 +83,7 @@ export async function uploadAlbumArtToSupabase(imageUrl: string, coverId: string
  * High-level automation:
  * Fetch → Upload → Update database
  */
-export async function autoFetchAndStoreAlbumArt(artist: string, song: string, coverId: string) {
+export async function autoFetchAndStoreAlbumArt(artist: string, song: string, coverId: string, client?: SupabaseClient) {
   try {
     console.log(`🎵 Auto-fetching album art for: ${artist} - ${song}`);
 
@@ -94,17 +95,23 @@ export async function autoFetchAndStoreAlbumArt(artist: string, song: string, co
     }
 
     // Step 2: Upload to Supabase Storage
-    const uploadedArtUrl = await uploadAlbumArtToSupabase(fetchedArtUrl, coverId);
+    const uploadedArtUrl = await uploadAlbumArtToSupabase(fetchedArtUrl, coverId, client);
     if (!uploadedArtUrl) {
       console.warn("⚠️ Failed to upload album art to Supabase");
       return;
     }
 
     // Step 3: Update the covers table
-    const { error } = await supabase
+    const sc = client ?? supabase;
+    console.log("🧱 Attempting DB update:", { coverId, uploadedArtUrl });
+    
+    const { data, error } = await sc
       .from("covers")
       .update({ album_art_url: uploadedArtUrl })
-      .eq("id", coverId);
+      .eq("id", coverId)
+      .select();
+      console.log("📦 DB update response:", { data, error });
+      console.log("xxx" + uploadedArtUrl)
 
     if (error) {
       console.error("❌ Failed to update album_art_url in DB:", error);
@@ -115,4 +122,6 @@ export async function autoFetchAndStoreAlbumArt(artist: string, song: string, co
   } catch (error) {
     console.error("Error in autoFetchAndStoreAlbumArt:", error);
   }
+
+  
 }
