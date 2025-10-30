@@ -57,7 +57,7 @@ export default function SettingsPage() {
     fetchData();
   }, []);
 
-  const handleAddGuitar = async (e) => {
+  const handleAddGuitar = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!newGuitarName.trim()) return;
 
