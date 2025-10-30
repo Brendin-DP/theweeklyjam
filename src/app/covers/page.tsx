@@ -14,7 +14,7 @@ export default function CoversPage() {
     song_number: string | number;
     title: string;
     artist: string;
-    status: string;
+    song_status: string;
     album_art_url?: string | null;
   };
 
@@ -46,7 +46,7 @@ export default function CoversPage() {
     const [{ data, error }, recordingsResult] = await Promise.all([
       supabase
         .from("covers")
-        .select("id, song_number, title, artist, status, album_art_url")
+        .select("id, song_number, title, artist, song_status, album_art_url")
         .order("song_number", { ascending: true }),
       supabase
         .from("recordings")
@@ -107,13 +107,21 @@ export default function CoversPage() {
           announced_at: new Date().toISOString(),
           announcer_id: userId,
         };
-        const { error } = await supabase
+        const { error, data: created } = await supabase
           .from("covers")
-          .insert([insertPayload]);
+          .insert([insertPayload])
+          .select("id");
         if (error) {
           setFormError(error.message ?? "Failed to add cover.");
           setIsSubmitting(false);
           return;
+        }
+        // Set default song_status after creation to satisfy enum constraints
+        if (created && created[0]?.id) {
+          await supabase
+            .from("covers")
+            .update({ song_status: "active" })
+            .eq("id", created[0].id);
         }
         // Success; list will refresh below
       } else if (modalMode === "edit" && editingCoverId != null) {
@@ -269,7 +277,7 @@ export default function CoversPage() {
                 </Link>
               </td>
               <td className="px-4 py-2">{cover.artist}</td>
-              <td className="px-4 py-2">{cover.status}</td>
+              <td className="px-4 py-2">{cover.song_status}</td>
               <td className="px-4 py-2">
                 <div className="relative inline-block text-left">
                   <button
