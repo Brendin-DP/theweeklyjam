@@ -21,6 +21,7 @@ export default function SettingsPage() {
   type Guitar = {
     id: string;
     name: string;
+    image_url?: string | null;
   };
   
   const [guitars, setGuitars] = useState<Guitar[]>([]);
