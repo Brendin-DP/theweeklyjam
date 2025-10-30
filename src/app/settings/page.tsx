@@ -11,7 +11,12 @@ const supabase = createClient(
 export default function SettingsPage() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState(null);
-  const [guitars, setGuitars] = useState([]);
+  type Guitar = {
+    id: string;
+    name: string;
+  };
+  
+  const [guitars, setGuitars] = useState<Guitar[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddGuitar, setShowAddGuitar] = useState(false);
   const [editingGuitar, setEditingGuitar] = useState(null);
