@@ -25,6 +25,7 @@ export default function DashboardPage() {
   const [isFeaturedMenuOpen, setIsFeaturedMenuOpen] = useState(false);
   const [isDeletingFeatured, setIsDeletingFeatured] = useState(false);
   const [showFeaturedDeleteConfirm, setShowFeaturedDeleteConfirm] = useState(false);
+  const [bothUsersSubmitted, setBothUsersSubmitted] = useState(false);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -150,9 +151,23 @@ useEffect(() => {
             .select("id", { count: "exact", head: true })
             .eq("artist", activeCovers[0].artist);
           setFeaturedArtistOccurrences(count || 0);
+          // Check if both target users submitted a recording for this cover
+          try {
+            const { data: recs } = await supabase
+              .from('recordings')
+              .select('user_id')
+              .eq('cover_id', activeCovers[0].id);
+            const submittedUserIds = new Set((recs || []).map((r: any) => r.user_id));
+            const brendinId = '10167d94-8c45-45a9-9ff0-b07bbc59ee7f';
+            const raymondId = 'd10577b4-91a2-4aaf-b0bd-20b126978545';
+            setBothUsersSubmitted(submittedUserIds.has(brendinId) && submittedUserIds.has(raymondId));
+          } catch {
+            setBothUsersSubmitted(false);
+          }
         } else {
           setFeaturedCover(null);
           setFeaturedArtistOccurrences(0);
+          setBothUsersSubmitted(false);
         }
       } catch (error) {
         console.error("Error in dashboard:", error);
@@ -204,13 +219,15 @@ useEffect(() => {
             </div>
           </div>
           <div className="relative flex items-center gap-2">
-            <Link
-              href={featuredCover ? `/covers/${featuredCover.id}` : "#"}
-              className={`rounded-md px-3 py-2 text-sm font-medium shadow-sm ${featuredCover ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-600 cursor-not-allowed pointer-events-none'}`}
-              title={featuredCover ? 'Submit Cover' : 'No active song'}
-            >
-              Submit Cover
-            </Link>
+            {!bothUsersSubmitted && (
+              <Link
+                href={featuredCover ? `/covers/${featuredCover.id}` : "#"}
+                className={`rounded-md px-3 py-2 text-sm font-medium shadow-sm ${featuredCover ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-600 cursor-not-allowed pointer-events-none'}`}
+                title={featuredCover ? 'Submit Cover' : 'No active song'}
+              >
+                Submit Cover
+              </Link>
+            )}
             <button
               type="button"
               onClick={() => setIsFeaturedMenuOpen((v) => !v)}
@@ -282,9 +299,22 @@ useEffect(() => {
                           .select('id', { count: 'exact', head: true })
                           .eq('artist', planned[0].artist);
                         setFeaturedArtistOccurrences(count || 0);
+                        try {
+                          const { data: recs } = await supabase
+                            .from('recordings')
+                            .select('user_id')
+                            .eq('cover_id', planned[0].id);
+                          const submittedUserIds = new Set((recs || []).map((r: any) => r.user_id));
+                          const brendinId = '10167d94-8c45-45a9-9ff0-b07bbc59ee7f';
+                          const raymondId = 'd10577b4-91a2-4aaf-b0bd-20b126978545';
+                          setBothUsersSubmitted(submittedUserIds.has(brendinId) && submittedUserIds.has(raymondId));
+                        } catch {
+                          setBothUsersSubmitted(false);
+                        }
                       } else {
                         setFeaturedCover(null);
                         setFeaturedArtistOccurrences(0);
+                        setBothUsersSubmitted(false);
                       }
                       setShowFeaturedDeleteConfirm(false);
                     }
