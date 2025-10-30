@@ -81,11 +81,25 @@ export default function CoversPage() {
       if (modalMode === "create") {
         const { data: userData } = await supabase.auth.getUser();
         const userId = userData?.user?.id ?? null;
+        // Determine next song number
+        let nextSongNumber = 1;
+        {
+          const { data: lastSongRows, error: lastErr } = await supabase
+            .from("covers")
+            .select("song_number")
+            .order("song_number", { ascending: false })
+            .limit(1);
+          if (!lastErr && lastSongRows && lastSongRows.length > 0) {
+            const currentMax = Number(lastSongRows[0]?.song_number ?? 0);
+            nextSongNumber = Number.isFinite(currentMax) ? currentMax + 1 : 1;
+          }
+        }
         const insertPayload: Record<string, any> = {
           title: formValues.title.trim(),
           artist: formValues.artist.trim(),
           album: formValues.album.trim() || null,
           album_art_url: formValues.album_art_url.trim() || null,
+          song_number: nextSongNumber,
           announced_at: new Date().toISOString(),
           announcer_id: userId,
         };
