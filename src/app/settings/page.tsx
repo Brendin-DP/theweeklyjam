@@ -10,7 +10,14 @@ const supabase = createClient(
 
 export default function SettingsPage() {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  
+  type Profile = {
+    id: string;
+    display_name: string;
+    email?: string;
+  };
+  
   type Guitar = {
     id: string;
     name: string;
