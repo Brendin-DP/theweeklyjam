@@ -26,6 +26,7 @@ export default function DashboardPage() {
   const [isDeletingFeatured, setIsDeletingFeatured] = useState(false);
   const [showFeaturedDeleteConfirm, setShowFeaturedDeleteConfirm] = useState(false);
   const [bothUsersSubmitted, setBothUsersSubmitted] = useState(false);
+  const [featuredHasRecordings, setFeaturedHasRecordings] = useState(false);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -161,13 +162,46 @@ useEffect(() => {
             const brendinId = '10167d94-8c45-45a9-9ff0-b07bbc59ee7f';
             const raymondId = 'd10577b4-91a2-4aaf-b0bd-20b126978545';
             setBothUsersSubmitted(submittedUserIds.has(brendinId) && submittedUserIds.has(raymondId));
+            setFeaturedHasRecordings((recs || []).length > 0);
           } catch {
             setBothUsersSubmitted(false);
+            setFeaturedHasRecordings(false);
           }
         } else {
-          setFeaturedCover(null);
-          setFeaturedArtistOccurrences(0);
-          setBothUsersSubmitted(false);
+          // Fallback: last completed song when no active exists
+          const { data: completed, error: completedErr } = await supabase
+            .from('covers')
+            .select('id, title, artist, song_status, song_number, album_art_url')
+            .eq('song_status', 'completed')
+            .order('song_number', { ascending: false })
+            .limit(1);
+          if (!completedErr && completed && completed.length > 0) {
+            setFeaturedCover(completed[0]);
+            const { count } = await supabase
+              .from('covers')
+              .select('id', { count: 'exact', head: true })
+              .eq('artist', completed[0].artist);
+            setFeaturedArtistOccurrences(count || 0);
+            try {
+              const { data: recs } = await supabase
+                .from('recordings')
+                .select('user_id')
+                .eq('cover_id', completed[0].id);
+              const submittedUserIds = new Set((recs || []).map((r: any) => r.user_id));
+              const brendinId = '10167d94-8c45-45a9-9ff0-b07bbc59ee7f';
+              const raymondId = 'd10577b4-91a2-4aaf-b0bd-20b126978545';
+              setBothUsersSubmitted(submittedUserIds.has(brendinId) && submittedUserIds.has(raymondId));
+              setFeaturedHasRecordings((recs || []).length > 0);
+            } catch {
+              setBothUsersSubmitted(false);
+              setFeaturedHasRecordings(false);
+            }
+          } else {
+            setFeaturedCover(null);
+            setFeaturedArtistOccurrences(0);
+            setBothUsersSubmitted(false);
+            setFeaturedHasRecordings(false);
+          }
         }
       } catch (error) {
         console.error("Error in dashboard:", error);
@@ -228,6 +262,11 @@ useEffect(() => {
                 Submit Cover
               </Link>
             )}
+            {featuredCover?.song_status === 'completed' && (
+              <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-700">
+                Song completed
+              </span>
+            )}
             <button
               type="button"
               onClick={() => setIsFeaturedMenuOpen((v) => !v)}
@@ -248,8 +287,10 @@ useEffect(() => {
                 <div className="border-t border-gray-200" />
                 <button
                   type="button"
-                  onClick={() => { setIsFeaturedMenuOpen(false); setShowFeaturedDeleteConfirm(true); }}
-                  className="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                  onClick={() => { if (!featuredHasRecordings) { setIsFeaturedMenuOpen(false); setShowFeaturedDeleteConfirm(true); } }}
+                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-red-50 ${featuredHasRecordings ? 'text-gray-400 cursor-not-allowed hover:bg-white' : 'text-red-600'}`}
+                  title={featuredHasRecordings ? 'Covers uploaded, cannot delete' : 'Delete'}
+                  disabled={featuredHasRecordings}
                 >
                   Delete
                 </button>
@@ -308,13 +349,46 @@ useEffect(() => {
                           const brendinId = '10167d94-8c45-45a9-9ff0-b07bbc59ee7f';
                           const raymondId = 'd10577b4-91a2-4aaf-b0bd-20b126978545';
                           setBothUsersSubmitted(submittedUserIds.has(brendinId) && submittedUserIds.has(raymondId));
+                          setFeaturedHasRecordings((recs || []).length > 0);
                         } catch {
                           setBothUsersSubmitted(false);
+                          setFeaturedHasRecordings(false);
                         }
                       } else {
-                        setFeaturedCover(null);
-                        setFeaturedArtistOccurrences(0);
-                        setBothUsersSubmitted(false);
+                        // fallback to last completed
+                        const { data: completed } = await supabase
+                          .from('covers')
+                          .select('id, title, artist, song_status, song_number, album_art_url')
+                          .eq('song_status', 'completed')
+                          .order('song_number', { ascending: false })
+                          .limit(1);
+                        if (completed && completed.length > 0) {
+                          setFeaturedCover(completed[0]);
+                          const { count } = await supabase
+                            .from('covers')
+                            .select('id', { count: 'exact', head: true })
+                            .eq('artist', completed[0].artist);
+                          setFeaturedArtistOccurrences(count || 0);
+                          try {
+                            const { data: recs } = await supabase
+                              .from('recordings')
+                              .select('user_id')
+                              .eq('cover_id', completed[0].id);
+                            const submittedUserIds = new Set((recs || []).map((r: any) => r.user_id));
+                            const brendinId = '10167d94-8c45-45a9-9ff0-b07bbc59ee7f';
+                            const raymondId = 'd10577b4-91a2-4aaf-b0bd-20b126978545';
+                            setBothUsersSubmitted(submittedUserIds.has(brendinId) && submittedUserIds.has(raymondId));
+                            setFeaturedHasRecordings((recs || []).length > 0);
+                          } catch {
+                            setBothUsersSubmitted(false);
+                            setFeaturedHasRecordings(false);
+                          }
+                        } else {
+                          setFeaturedCover(null);
+                          setFeaturedArtistOccurrences(0);
+                          setBothUsersSubmitted(false);
+                          setFeaturedHasRecordings(false);
+                        }
                       }
                       setShowFeaturedDeleteConfirm(false);
                     }
