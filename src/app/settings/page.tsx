@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { User } from "@supabase/supabase-js";
 
 const supabase = createClient(
   "https://ktctqojjjdxwizztkkmc.supabase.co",
@@ -8,7 +9,7 @@ const supabase = createClient(
 );
 
 export default function SettingsPage() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState(null);
   const [guitars, setGuitars] = useState([]);
   const [loading, setLoading] = useState(true);
