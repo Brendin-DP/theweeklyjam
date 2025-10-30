@@ -9,13 +9,15 @@ const supabase = createClient(
 );
 
 export default function DashboardPage() {
-  const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(null);
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<{ display_name: string } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [topArtists, setTopArtists] = useState([]);
-  const [brendinGuitars, setBrendinGuitars] = useState([]);
-  const [raymondGuitars, setRaymondGuitars] = useState([]);
+  const [topArtists, setTopArtists] = useState<Array<{ artist: string; count: number }>>([]);
+  const [brendinGuitars, setBrendinGuitars] = useState<Array<{ guitar: string; count: number }>>([]);
+  const [raymondGuitars, setRaymondGuitars] = useState<Array<{ guitar: string; count: number }>>([]);
   const [uniqueArtistsCount, setUniqueArtistsCount] = useState(0);
+  const [uniqueOnceCount, setUniqueOnceCount] = useState(0);
+  const [totalCoversCount, setTotalCoversCount] = useState(0);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -43,8 +45,8 @@ export default function DashboardPage() {
         if (coversError) {
           console.error("Error fetching covers:", coversError);
         } else {
-          const artistCounts = {};
-          covers?.forEach((cover) => {
+          const artistCounts: Record<string, number> = {};
+          covers?.forEach((cover: { artist: string | null }) => {
             if (cover.artist) {
               artistCounts[cover.artist] =
                 (artistCounts[cover.artist] || 0) + 1;
@@ -52,7 +54,7 @@ export default function DashboardPage() {
           });
 
           const sortedArtists = Object.entries(artistCounts)
-            .map(([artist, count]) => ({ artist, count }))
+            .map(([artist, count]) => ({ artist, count: Number(count) }))
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
 
@@ -62,6 +64,12 @@ export default function DashboardPage() {
             covers?.map((cover) => cover.artist).filter(Boolean)
           );
           setUniqueArtistsCount(uniqueArtists.size);
+
+          // Unique-once artists (appear exactly once)
+          const onceOnly = Object.values(artistCounts).filter((c) => c === 1)
+            .length;
+          setUniqueOnceCount(onceOnly);
+          setTotalCoversCount(covers?.length || 0);
         }
 
         // Fetch recordings with guitar name
@@ -72,11 +80,13 @@ export default function DashboardPage() {
         if (recordingsError) {
           console.error("Error fetching recordings:", recordingsError);
         } else {
-          const guitarUsageByUser = {};
+          const guitarUsageByUser: Record<string, Record<string, number>> = {};
 
-          recordings?.forEach((rec) => {
-            const userId = rec.user_id;
-            const guitarName = rec.guitars?.name;
+          recordings?.forEach((rec: any) => {
+            const userId = rec?.user_id as string | null;
+            const guitarName: string | undefined = Array.isArray(rec?.guitars)
+              ? rec.guitars[0]?.name
+              : rec?.guitars?.name;
 
             if (!userId || !guitarName) return;
 
@@ -88,10 +98,10 @@ export default function DashboardPage() {
               (guitarUsageByUser[userId][guitarName] || 0) + 1;
           });
 
-          const getSortedGuitars = (userId) => {
+          const getSortedGuitars = (userId: string) => {
             const usage = guitarUsageByUser[userId] || {};
             return Object.entries(usage)
-              .map(([guitar, count]) => ({ guitar, count }))
+              .map(([guitar, count]) => ({ guitar, count: Number(count) }))
               .sort((a, b) => b.count - a.count);
           };
 
@@ -180,14 +190,35 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Unique Artists Count */}
+        {/* Unique Artists Count with Unique-Once Ratio Pie */}
         <div className="bg-white rounded-lg shadow-md p-6 border">
           <h2 className="text-lg font-semibold mb-4">Unique Artists</h2>
           <div className="text-center">
+            {(() => {
+              const ratio = totalCoversCount > 0 ? uniqueArtistsCount / totalCoversCount : 0;
+              const pct = Math.round(ratio * 100);
+              const deg = Math.round(ratio * 360);
+              return (
+                <div className="mx-auto mb-4 flex items-center justify-center">
+                  <div
+                    className="relative h-24 w-24 rounded-full"
+                    style={{
+                      background: `conic-gradient(#22c55e ${deg}deg, #e5e7eb 0)`,
+                    }}
+                    title={`${pct}% unique-once artists`}
+                  >
+                    <div className="absolute inset-2 rounded-full bg-white flex items-center justify-center">
+                      <span className="text-sm font-semibold text-gray-700">{pct}%</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             <div className="text-3xl font-bold text-blue-600">
               {uniqueArtistsCount}
             </div>
             <p className="text-sm text-gray-500 mt-2">All-time unique artists</p>
+            <p className="text-xs text-gray-400 mt-1">{uniqueArtistsCount} unique artists out of {totalCoversCount} songs</p>
           </div>
         </div>
       </div>
