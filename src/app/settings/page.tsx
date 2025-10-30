@@ -111,6 +111,10 @@ export default function SettingsPage() {
           alert('Error updating guitar: ' + error.message);
         } else {
           // Refresh guitars list
+          if (!user) {
+            console.error("User not found while refreshing guitars list");
+            return;
+          }
           const { data: guitarsData } = await supabase
             .from('guitars')
             .select('*')
