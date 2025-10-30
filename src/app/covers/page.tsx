@@ -9,7 +9,16 @@ const supabase = createClient(
 );
 
 export default function CoversPage() {
-  const [covers, setCovers] = useState([]);
+  type Cover = {
+    id: string | number;
+    song_number: string | number;
+    title: string;
+    artist: string;
+    status: string;
+  };
+
+  const [covers, setCovers] = useState<Cover[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     async function fetchCovers() {
@@ -26,9 +35,32 @@ export default function CoversPage() {
     fetchCovers();
   }, []);
 
+  const filteredCovers = covers.filter((cover: Cover) => {
+    if (!searchQuery) return true;
+    const query = String(searchQuery).toLowerCase();
+    const title = String(cover.title ?? "").toLowerCase();
+    const artist = String(cover.artist ?? "").toLowerCase();
+    const songNumber = String(cover.song_number ?? "");
+    return (
+      title.includes(query) ||
+      artist.includes(query) ||
+      songNumber.includes(query)
+    );
+  });
+
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-4">Covers List</h1>
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-semibold">Covers List</h1>
+        <input
+          type="text"
+          inputMode="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search..."
+          className="w-64 max-w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+      </div>
       <table className="w-full table-auto border border-gray-300">
         <thead className="bg-gray-200">
           <tr>
@@ -39,7 +71,7 @@ export default function CoversPage() {
           </tr>
         </thead>
         <tbody>
-          {covers.map((cover: any) => (
+          {filteredCovers.map((cover: any) => (
             <tr key={cover.id} className="border-t border-gray-300 hover:bg-gray-100">
               <td className="px-4 py-2">{cover.song_number}</td>
               <td className="px-4 py-2">
