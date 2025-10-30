@@ -62,6 +62,11 @@ export default function SettingsPage() {
     if (!newGuitarName.trim()) return;
 
     try {
+      if (!user) {
+        console.error("No user found. Cannot add guitar.");
+        return;
+      }
+      
       const { error } = await supabase
         .from('guitars')
         .insert({
