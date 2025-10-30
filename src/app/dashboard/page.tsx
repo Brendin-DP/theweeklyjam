@@ -19,6 +19,11 @@ export default function DashboardPage() {
   const [uniqueArtistsCount, setUniqueArtistsCount] = useState(0);
   const [uniqueOnceCount, setUniqueOnceCount] = useState(0);
   const [totalCoversCount, setTotalCoversCount] = useState(0);
+  const [featuredCover, setFeaturedCover] = useState<any>(null);
+  const [featuredArtistOccurrences, setFeaturedArtistOccurrences] = useState<number>(0);
+  const [isFeaturedMenuOpen, setIsFeaturedMenuOpen] = useState(false);
+  const [isDeletingFeatured, setIsDeletingFeatured] = useState(false);
+  const [showFeaturedDeleteConfirm, setShowFeaturedDeleteConfirm] = useState(false);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -129,6 +134,25 @@ useEffect(() => {
           setBrendinGuitars(getSortedGuitars(brendinId));
           setRaymondGuitars(getSortedGuitars(raymondId));
         }
+
+        // Featured cover (status = Planned)
+        const { data: planned, error: plannedError } = await supabase
+          .from("covers")
+          .select("id, title, artist, status, song_number, album_art_url")
+          .eq("status", "Planned")
+          .order("song_number", { ascending: true })
+          .limit(1);
+        if (!plannedError && planned && planned.length > 0) {
+          setFeaturedCover(planned[0]);
+          const { count } = await supabase
+            .from("covers")
+            .select("id", { count: "exact", head: true })
+            .eq("artist", planned[0].artist);
+          setFeaturedArtistOccurrences(count || 0);
+        } else {
+          setFeaturedCover(null);
+          setFeaturedArtistOccurrences(0);
+        }
       } catch (error) {
         console.error("Error in dashboard:", error);
       } finally {
@@ -148,6 +172,122 @@ useEffect(() => {
       <h1 className="text-2xl font-semibold mb-6">
         Welcome to your Dashboard, {profile?.display_name || user?.email}
       </h1>
+      {/* Featured Song (Planned) */}
+      <div className="mb-6 rounded-lg border bg-white p-6 shadow-md">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className="h-20 w-20 overflow-hidden rounded-md border bg-gray-100">
+              {(() => {
+                const raw = featuredCover?.album_art_url as string | null | undefined;
+                if (!raw) return null;
+                const url = typeof raw === 'string' && (raw.startsWith('http://') || raw.startsWith('https://'))
+                  ? raw
+                  : supabase.storage.from('album-art').getPublicUrl(String(raw)).data.publicUrl;
+                if (!url) return null;
+                return <img src={url} alt="album art" className="h-full w-full object-cover" />;
+              })()}
+            </div>
+            <div>
+              <div className="mb-1 flex items-center gap-2">
+                <span className="inline-block rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">#{featuredCover?.song_number ?? '—'}</span>
+                <h2 className="text-xl font-semibold">{featuredCover?.title ?? 'No Planned song'}</h2>
+              </div>
+              <p className="text-gray-700">Artist: {featuredCover?.artist ?? '—'}</p>
+              <p className="text-xs text-gray-500 mt-1">Artist occurrences: {featuredArtistOccurrences}</p>
+            </div>
+          </div>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsFeaturedMenuOpen((v) => !v)}
+              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-sm shadow-sm hover:bg-gray-50"
+              disabled={!featuredCover}
+              title={!featuredCover ? 'No Planned song' : 'Actions'}
+            >
+              •••
+            </button>
+            {isFeaturedMenuOpen && featuredCover && (
+              <div className="absolute right-0 z-10 mt-1 w-32 origin-top-right rounded-md border border-gray-200 bg-white shadow-lg">
+                <a
+                  href={`/covers/${featuredCover.id}`}
+                  className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                >
+                  Edit
+                </a>
+                <div className="border-t border-gray-200" />
+                <button
+                  type="button"
+                  onClick={() => { setIsFeaturedMenuOpen(false); setShowFeaturedDeleteConfirm(true); }}
+                  className="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                >
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Delete confirmation for featured */}
+      {showFeaturedDeleteConfirm && featuredCover && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => !isDeletingFeatured && setShowFeaturedDeleteConfirm(false)} />
+          <div className="relative z-10 w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-red-600">Delete Featured Song:</h2>
+              <p className="mt-2 text-sm text-gray-700">You are about to delete this song, do you want to proceed?</p>
+            </div>
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => !isDeletingFeatured && setShowFeaturedDeleteConfirm(false)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+                disabled={isDeletingFeatured}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!featuredCover) return;
+                  setIsDeletingFeatured(true);
+                  try {
+                    const { error } = await supabase.from('covers').delete().eq('id', featuredCover.id);
+                    if (!error) {
+                      // Refresh featured
+                      const { data: planned } = await supabase
+                        .from('covers')
+                        .select('id, title, artist, status, song_number, album_art_url')
+                        .eq('status', 'Planned')
+                        .order('song_number', { ascending: true })
+                        .limit(1);
+                      if (planned && planned.length > 0) {
+                        setFeaturedCover(planned[0]);
+                        const { count } = await supabase
+                          .from('covers')
+                          .select('id', { count: 'exact', head: true })
+                          .eq('artist', planned[0].artist);
+                        setFeaturedArtistOccurrences(count || 0);
+                      } else {
+                        setFeaturedCover(null);
+                        setFeaturedArtistOccurrences(0);
+                      }
+                      setShowFeaturedDeleteConfirm(false);
+                    }
+                  } finally {
+                    setIsDeletingFeatured(false);
+                  }
+                }}
+                className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50"
+                disabled={isDeletingFeatured}
+              >
+                {isDeletingFeatured ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Top 10 Artists */}
