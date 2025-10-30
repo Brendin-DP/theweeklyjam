@@ -51,13 +51,14 @@ export async function uploadAlbumArtToSupabase(imageUrl: string, coverId: string
     if (!res.ok) throw new Error(`Failed to download image: ${res.status}`);
     const blob = await res.blob();
 
-    const fileName = `${coverId}_${Date.now()}.jpg`;
+    // Deterministic filename prevents duplicate objects on race/strict-mode double renders
+    const fileName = `${coverId}.jpg`;
 
     const sc = client ?? supabase;
     const { data, error } = await sc.storage
       .from("album-art")
       .upload(fileName, blob, {
-        contentType: "image/jpeg",
+        contentType: blob.type || "image/jpeg",
         upsert: true,
       });
 
@@ -87,6 +88,21 @@ export async function autoFetchAndStoreAlbumArt(artist: string, song: string, co
   try {
     console.log(`🎵 Auto-fetching album art for: ${artist} - ${song}`);
 
+    // Guard: avoid duplicate uploads if album_art_url already exists
+    const sc = client ?? supabase;
+    const { data: existingCover, error: existingErr } = await sc
+      .from("covers")
+      .select("album_art_url")
+      .eq("id", coverId)
+      .single();
+    if (existingErr) {
+      console.warn("⚠️ Could not check existing album_art_url:", existingErr);
+    }
+    if (existingCover && existingCover.album_art_url) {
+      console.log("ℹ️ Album art already present, skipping fetch/upload.");
+      return;
+    }
+
     // Step 1: Fetch from iTunes
     const fetchedArtUrl = await fetchAlbumArt(artist, song);
     if (!fetchedArtUrl) {
@@ -102,7 +118,6 @@ export async function autoFetchAndStoreAlbumArt(artist: string, song: string, co
     }
 
     // Step 3: Update the covers table
-    const sc = client ?? supabase;
     console.log("🧱 Attempting DB update:", { coverId, uploadedArtUrl });
     
     const { data, error } = await sc
@@ -111,7 +126,7 @@ export async function autoFetchAndStoreAlbumArt(artist: string, song: string, co
       .eq("id", coverId)
       .select();
       console.log("📦 DB update response:", { data, error });
-      console.log("xxx" + uploadedArtUrl)
+
 
     if (error) {
       console.error("❌ Failed to update album_art_url in DB:", error);

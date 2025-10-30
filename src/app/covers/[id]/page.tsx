@@ -151,7 +151,12 @@ if (!coverData.album_art_url && coverData.artist && coverData.title) {
       setLoading(false);
     }
 
-    fetchData();
+    // Guard against StrictMode double-invocation causing duplicate auto-fetch
+    let didRun = false;
+    if (!didRun) {
+      didRun = true;
+      fetchData();
+    }
   }, [params.id]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -307,14 +312,16 @@ if (!coverData.album_art_url && coverData.artist && coverData.title) {
           </div>
           <div className="flex-1">
             <div className="mb-2 flex items-start justify-between gap-4">
+            
               <h1 className="text-2xl font-semibold">{cover.title}</h1>
               <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-700">
                 Artist occurrences: {artistOccurrenceCount}
               </span>
             </div>
+            <p className="text-gray-500 text-sm">Song #{cover.song_number}</p>
             <p className="text-gray-700 mb-1">Artist: {cover.artist}</p>
             <p className="text-gray-700 mb-1">Status: {cover.status}</p>
-            <p className="text-gray-500 text-sm">Song #{cover.song_number}</p>
+            
           </div>
         </div>
       </div>

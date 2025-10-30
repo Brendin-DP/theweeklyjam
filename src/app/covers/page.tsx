@@ -36,7 +36,6 @@ export default function CoversPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [nonDeletableCoverIds, setNonDeletableCoverIds] = useState<Set<string | number>>(new Set());
-  const [albumArtFile, setAlbumArtFile] = useState<File | null>(null);
 
   useEffect(() => {
     loadCoversAndLocks();
@@ -95,21 +94,8 @@ export default function CoversPage() {
             nextSongNumber = Number.isFinite(currentMax) ? currentMax + 1 : 1;
           }
         }
-        // Determine album art URL from file upload or manual URL
-        let resolvedAlbumArtUrl: string | null = formValues.album_art_url.trim() || null;
-        if (albumArtFile) {
-          const ext = albumArtFile.name.split('.').pop() || 'jpg';
-          const fileName = `${userId ?? 'anon'}_${Date.now()}.${ext}`;
-          const { data: uploadData, error: uploadErr } = await supabase.storage
-            .from('album-art')
-            .upload(fileName, albumArtFile, { upsert: true, contentType: albumArtFile.type || 'image/jpeg' });
-          if (uploadErr) {
-            setFormError(uploadErr.message ?? 'Failed to upload album art.');
-            setIsSubmitting(false);
-            return;
-          }
-          resolvedAlbumArtUrl = supabase.storage.from('album-art').getPublicUrl(uploadData.path).data.publicUrl;
-        }
+        // Use manual URL if provided; otherwise remain null (auto-fetch will handle later)
+        const resolvedAlbumArtUrl: string | null = formValues.album_art_url.trim() || null;
 
         const insertPayload: Record<string, any> = {
           title: formValues.title.trim(),
@@ -129,32 +115,11 @@ export default function CoversPage() {
           setIsSubmitting(false);
           return;
         }
-        if (resolvedAlbumArtUrl && (!inserted || !inserted[0] || !inserted[0].album_art_url)) {
-          console.warn("Album art URL was resolved but not persisted on insert.");
-        }
+        // no-op
       } else if (modalMode === "edit" && editingCoverId != null) {
-        // Resolve album art URL from file upload or manual URL; if neither provided, don't change existing
-        let resolvedAlbumArtUrl: string | null = null;
-        let shouldUpdateAlbumArt = false;
-        if (albumArtFile) {
-          shouldUpdateAlbumArt = true;
-          const { data: userData } = await supabase.auth.getUser();
-          const userId = userData?.user?.id ?? 'anon';
-          const ext = albumArtFile.name.split('.').pop() || 'jpg';
-          const fileName = `${userId}_${Date.now()}.${ext}`;
-          const { data: uploadData, error: uploadErr } = await supabase.storage
-            .from('album-art')
-            .upload(fileName, albumArtFile, { upsert: true, contentType: albumArtFile.type || 'image/jpeg' });
-          if (uploadErr) {
-            setFormError(uploadErr.message ?? 'Failed to upload album art.');
-            setIsSubmitting(false);
-            return;
-          }
-          resolvedAlbumArtUrl = supabase.storage.from('album-art').getPublicUrl(uploadData.path).data.publicUrl;
-        } else if (formValues.album_art_url.trim()) {
-          shouldUpdateAlbumArt = true;
-          resolvedAlbumArtUrl = formValues.album_art_url.trim();
-        }
+        // Only update album art if a manual URL is provided; otherwise leave existing
+        const shouldUpdateAlbumArt = Boolean(formValues.album_art_url.trim());
+        const resolvedAlbumArtUrl = shouldUpdateAlbumArt ? formValues.album_art_url.trim() : null;
 
         const updatePayload: Record<string, any> = {
           title: formValues.title.trim(),
@@ -174,16 +139,13 @@ export default function CoversPage() {
           setIsSubmitting(false);
           return;
         }
-        if (shouldUpdateAlbumArt && (!updated || !updated[0] || !updated[0].album_art_url)) {
-          console.warn("Album art URL was supplied but not persisted on update.");
-        }
+        // no-op
       }
       // Refresh list
       await loadCoversAndLocks();
       // Close modal and reset form
       setIsModalOpen(false);
       setFormValues({ title: "", artist: "", album: "", album_art_url: "" });
-      setAlbumArtFile(null);
       setEditingCoverId(null);
       setModalMode("create");
     } finally {
@@ -402,16 +364,7 @@ export default function CoversPage() {
                   placeholder="https://..."
                 />
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">Or upload album art (optional)</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setAlbumArtFile(e.target.files?.[0] || null)}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <p className="mt-1 text-xs text-gray-500">If both a URL and a file are provided, the uploaded file will be used.</p>
-              </div>
+              
               {formError && (
                 <p className="text-sm text-red-600">{formError}</p>
               )}
