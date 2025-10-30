@@ -20,29 +20,54 @@ export default function CoversPage() {
   const [covers, setCovers] = useState<Cover[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [editingCoverId, setEditingCoverId] = useState<string | number | null>(null);
   const [formValues, setFormValues] = useState({
     title: "",
     artist: "",
     album: "",
-    album_art: "",
+    album_art_url: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | number | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deletingCoverId, setDeletingCoverId] = useState<string | number | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [nonDeletableCoverIds, setNonDeletableCoverIds] = useState<Set<string | number>>(new Set());
 
   useEffect(() => {
-    async function fetchCovers() {
-      const { data, error } = await supabase
+    loadCoversAndLocks();
+  }, []);
+
+  async function loadCoversAndLocks() {
+    const [{ data, error }, recordingsResult] = await Promise.all([
+      supabase
         .from("covers")
         .select("id, song_number, title, artist, status")
-        .order("song_number", { ascending: true });
-      if (error) {
-        console.error("Error fetching covers:", error);
-      } else {
-        setCovers(data);
-      }
+        .order("song_number", { ascending: true }),
+      supabase
+        .from("recordings")
+        .select("cover_id")
+        .not("mp3_url", "is", null),
+    ]);
+    if (error) {
+      console.error("Error fetching covers:", error);
+    } else if (data) {
+      setCovers(data);
     }
-    fetchCovers();
-  }, []);
+    const recordingsData = recordingsResult.data as Array<{ cover_id: string | number } | null> | null;
+    if (recordingsData && Array.isArray(recordingsData)) {
+      const ids = new Set<string | number>();
+      for (const row of recordingsData) {
+        if (row && row.cover_id != null) ids.add(row.cover_id);
+      }
+      setNonDeletableCoverIds(ids);
+    } else {
+      setNonDeletableCoverIds(new Set());
+    }
+  }
 
   async function handleAddCoverSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -53,35 +78,97 @@ export default function CoversPage() {
     }
     setIsSubmitting(true);
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData?.user?.id ?? null;
-      const insertPayload: Record<string, any> = {
-        title: formValues.title.trim(),
-        artist: formValues.artist.trim(),
-        album: formValues.album.trim() || null,
-        album_art: formValues.album_art.trim() || null,
-        announced_at: new Date().toISOString(),
-        announcer_id: userId,
-      };
-      const { error } = await supabase.from("covers").insert([insertPayload]);
-      if (error) {
-        setFormError(error.message ?? "Failed to add cover.");
-        setIsSubmitting(false);
-        return;
+      if (modalMode === "create") {
+        const { data: userData } = await supabase.auth.getUser();
+        const userId = userData?.user?.id ?? null;
+        const insertPayload: Record<string, any> = {
+          title: formValues.title.trim(),
+          artist: formValues.artist.trim(),
+          album: formValues.album.trim() || null,
+          album_art_url: formValues.album_art_url.trim() || null,
+          announced_at: new Date().toISOString(),
+          announcer_id: userId,
+        };
+        const { error } = await supabase.from("covers").insert([insertPayload]);
+        if (error) {
+          setFormError(error.message ?? "Failed to add cover.");
+          setIsSubmitting(false);
+          return;
+        }
+      } else if (modalMode === "edit" && editingCoverId != null) {
+        const updatePayload: Record<string, any> = {
+          title: formValues.title.trim(),
+          artist: formValues.artist.trim(),
+          album: formValues.album.trim() || null,
+          album_art_url: formValues.album_art_url.trim() || null,
+        };
+        const { error } = await supabase
+          .from("covers")
+          .update(updatePayload)
+          .eq("id", editingCoverId);
+        if (error) {
+          setFormError(error.message ?? "Failed to update cover.");
+          setIsSubmitting(false);
+          return;
+        }
       }
       // Refresh list
-      const { data, error: fetchError } = await supabase
-        .from("covers")
-        .select("id, song_number, title, artist, status")
-        .order("song_number", { ascending: true });
-      if (!fetchError && data) {
-        setCovers(data);
-      }
+      await loadCoversAndLocks();
       // Close modal and reset form
       setIsModalOpen(false);
-      setFormValues({ title: "", artist: "", album: "", album_art: "" });
+      setFormValues({ title: "", artist: "", album: "", album_art_url: "" });
+      setEditingCoverId(null);
+      setModalMode("create");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function openEditForCover(cover: { id: string | number; title?: string; artist?: string; album?: string; album_art_url?: string }) {
+    setFormError(null);
+    setIsSubmitting(false);
+    setModalMode("edit");
+    setEditingCoverId(cover.id);
+    // Prefill immediately from the row data if available
+    setFormValues({
+      title: cover.title ?? "",
+      artist: cover.artist ?? "",
+      album: cover.album ?? "",
+      album_art_url: cover.album_art_url ?? "",
+    });
+    // Load full details for the cover to ensure we have all fields
+    const { data, error } = await supabase
+      .from("covers")
+      .select("id, title, artist, album, album_art_url")
+      .eq("id", cover.id)
+      .single();
+    if (!error && data) {
+      setFormValues({
+        title: data.title ?? "",
+        artist: data.artist ?? "",
+        album: data.album ?? "",
+        album_art_url: data.album_art_url ?? "",
+      });
+    }
+    setIsModalOpen(true);
+  }
+
+  async function handleConfirmDelete() {
+    if (deletingCoverId == null) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const { error } = await supabase.from("covers").delete().eq("id", deletingCoverId);
+      if (error) {
+        setDeleteError(error.message ?? "Failed to delete.");
+        setIsDeleting(false);
+        return;
+      }
+      await loadCoversAndLocks();
+      setIsDeleteModalOpen(false);
+      setDeletingCoverId(null);
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -127,6 +214,7 @@ export default function CoversPage() {
             <th className="px-4 py-2 text-left">Title</th>
             <th className="px-4 py-2 text-left">Artist</th>
             <th className="px-4 py-2 text-left">Status</th>
+            <th className="px-4 py-2 text-left">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -140,6 +228,51 @@ export default function CoversPage() {
               </td>
               <td className="px-4 py-2">{cover.artist}</td>
               <td className="px-4 py-2">{cover.status}</td>
+              <td className="px-4 py-2">
+                <div className="relative inline-block text-left">
+                  <button
+                    type="button"
+                    onClick={() => setOpenMenuId((prev) => (prev === cover.id ? null : cover.id))}
+                    className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-sm shadow-sm hover:bg-gray-50"
+                  >
+                    •••
+                  </button>
+                  {openMenuId === cover.id && (
+                    <div className="absolute right-0 z-20 mt-1 w-28 origin-top-right rounded-md border border-gray-200 bg-white shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenMenuId(null);
+                          openEditForCover(cover);
+                        }}
+                        className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                      >
+                        Edit
+                      </button>
+                      <div className="border-t border-gray-200" />
+                      {(() => {
+                        const hasUploadedCover = nonDeletableCoverIds.has(cover.id);
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (hasUploadedCover) return;
+                              setOpenMenuId(null);
+                              setDeletingCoverId(cover.id);
+                              setIsDeleteModalOpen(true);
+                            }}
+                            title={hasUploadedCover ? "Covers uploaded, can't delete" : undefined}
+                            className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${hasUploadedCover ? "cursor-not-allowed text-gray-400" : ""}`}
+                            disabled={hasUploadedCover}
+                          >
+                            Delete
+                          </button>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -150,7 +283,7 @@ export default function CoversPage() {
           <div className="absolute inset-0 bg-black/50" onClick={() => !isSubmitting && setIsModalOpen(false)} />
           <div className="relative z-10 w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Add Cover</h2>
+              <h2 className="text-lg font-semibold">{modalMode === "edit" ? "Edit Cover" : "Add Cover"}</h2>
               <button
                 type="button"
                 onClick={() => !isSubmitting && setIsModalOpen(false)}
@@ -196,8 +329,8 @@ export default function CoversPage() {
                 <label className="mb-1 block text-sm font-medium">Album art URL (optional)</label>
                 <input
                   type="url"
-                  value={formValues.album_art}
-                  onChange={(e) => setFormValues((s) => ({ ...s, album_art: e.target.value }))}
+                  value={formValues.album_art_url}
+                  onChange={(e) => setFormValues((s) => ({ ...s, album_art_url: e.target.value }))}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   placeholder="https://..."
                 />
@@ -219,10 +352,41 @@ export default function CoversPage() {
                   className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
                   disabled={isSubmitting}
                 >
-                  {isSubmitting ? "Adding..." : "Add"}
+                  {isSubmitting ? (modalMode === "edit" ? "Saving..." : "Adding...") : modalMode === "edit" ? "Save" : "Add"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => !isDeleting && setIsDeleteModalOpen(false)} />
+          <div className="relative z-10 w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-red-600">Delete Song:</h2>
+              <p className="mt-2 text-sm text-gray-700">You are about to delete this song, do you want to proceed?</p>
+            </div>
+            {deleteError && <p className="mb-3 text-sm text-red-600">{deleteError}</p>}
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => !isDeleting && setIsDeleteModalOpen(false)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50"
+                disabled={isDeleting}
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
           </div>
         </div>
       )}
