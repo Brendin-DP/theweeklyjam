@@ -1,6 +1,6 @@
+"use client";
+import LoginPage from "./login/page";
+
 export default function Home() {
-  if (typeof window !== "undefined") {
-    window.location.href = "/login";
-  }
-  return null;
+  return <LoginPage />;
 }
