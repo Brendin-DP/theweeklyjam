@@ -27,6 +27,9 @@ export default function DashboardPage() {
   const [showFeaturedDeleteConfirm, setShowFeaturedDeleteConfirm] = useState(false);
   const [bothUsersSubmitted, setBothUsersSubmitted] = useState(false);
   const [featuredHasRecordings, setFeaturedHasRecordings] = useState(false);
+  const [carouselCovers, setCarouselCovers] = useState<any[]>([]);
+  const [carouselRecordings, setCarouselRecordings] = useState<Map<string | number, { brendin?: any; raymond?: any }>>(new Map());
+  const [carouselIndex, setCarouselIndex] = useState(0);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -201,6 +204,46 @@ useEffect(() => {
             setFeaturedArtistOccurrences(0);
             setBothUsersSubmitted(false);
             setFeaturedHasRecordings(false);
+          }
+        }
+
+        // Fetch all covers for carousel (latest first)
+        const { data: allCovers } = await supabase
+          .from("covers")
+          .select("id, song_number, title, artist, album_art_url")
+          .order("song_number", { ascending: false });
+        
+        if (allCovers) {
+          setCarouselCovers(allCovers);
+          
+          // Fetch all recordings for these covers
+          const coverIds = allCovers.map(c => c.id);
+          if (coverIds.length > 0) {
+            const { data: allRecordings } = await supabase
+              .from("recordings")
+              .select("id, cover_id, user_id, mp3_url")
+              .in("cover_id", coverIds)
+              .not("mp3_url", "eq", "no-audio-uploaded");
+            
+            if (allRecordings) {
+              const brendinId = "10167d94-8c45-45a9-9ff0-b07bbc59ee7f";
+              const raymondId = "d10577b4-91a2-4aaf-b0bd-20b126978545";
+              const recordingsMap = new Map<string | number, { brendin?: any; raymond?: any }>();
+              
+              allRecordings.forEach((rec: any) => {
+                if (!recordingsMap.has(rec.cover_id)) {
+                  recordingsMap.set(rec.cover_id, {});
+                }
+                const coverRecordings = recordingsMap.get(rec.cover_id)!;
+                if (rec.user_id === brendinId) {
+                  coverRecordings.brendin = rec;
+                } else if (rec.user_id === raymondId) {
+                  coverRecordings.raymond = rec;
+                }
+              });
+              
+              setCarouselRecordings(recordingsMap);
+            }
           }
         }
       } catch (error) {
@@ -405,7 +448,135 @@ useEffect(() => {
           </div>
         </div>
       )}
-      
+
+      {/* Song Carousel */}
+      {carouselCovers.length > 0 && (
+        <div className="mb-6 rounded-lg border bg-white p-6 shadow-md">
+          <h2 className="text-lg font-semibold mb-6">Song Carousel</h2>
+          {carouselCovers[carouselIndex] && (() => {
+            const currentCover = carouselCovers[carouselIndex];
+            const recordings = carouselRecordings.get(currentCover.id) || {};
+            const brendinId = "10167d94-8c45-45a9-9ff0-b07bbc59ee7f";
+            const raymondId = "d10577b4-91a2-4aaf-b0bd-20b126978545";
+            
+            const albumArtUrl = (() => {
+              const raw = currentCover.album_art_url as string | null | undefined;
+              if (!raw) return null;
+              if (typeof raw === 'string' && (raw.startsWith('http://') || raw.startsWith('https://'))) {
+                return raw;
+              }
+              return supabase.storage.from('album-art').getPublicUrl(String(raw)).data.publicUrl;
+            })();
+
+            const getRecordingUrl = (recording: any) => {
+              if (!recording || !recording.mp3_url) return null;
+              return supabase.storage.from('recordings-media').getPublicUrl(recording.mp3_url).data.publicUrl;
+            };
+
+            const brendinUrl = recordings.brendin ? getRecordingUrl(recordings.brendin) : null;
+            const raymondUrl = recordings.raymond ? getRecordingUrl(recordings.raymond) : null;
+
+            return (
+              <div className="flex flex-col md:flex-row gap-6 items-center">
+                {/* Navigation Arrow - Left (Previous) */}
+                <button
+                  onClick={() => setCarouselIndex((prev) => (prev === 0 ? carouselCovers.length - 1 : prev - 1))}
+                  className="hidden md:flex items-center justify-center w-12 h-12 rounded-full bg-gray-200 hover:bg-gray-300 transition-colors self-center"
+                  aria-label="Previous song"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+
+                {/* Album Art */}
+                <div className="flex-shrink-0">
+                  <div className="w-64 h-64 rounded-lg overflow-hidden border bg-gray-100 shadow-lg">
+                    {albumArtUrl ? (
+                      <img src={albumArtUrl} alt={`${currentCover.title} album art`} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-400">
+                        No Album Art
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Song Details and Recordings */}
+                <div className="flex-1 flex flex-col gap-4">
+                  <div>
+                    <div className="text-2xl font-bold">#{currentCover.song_number} - {currentCover.title}</div>
+                    <div className="text-lg text-gray-600">{currentCover.artist}</div>
+                  </div>
+
+                  {/* Recordings Section */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    {/* Brendin's Recording */}
+                    <div className="bg-gray-50 rounded-lg p-4 border">
+                      <h3 className="text-sm font-semibold mb-2 text-gray-700">Brendin's Recording</h3>
+                      {brendinUrl ? (
+                        <audio controls className="w-full" src={brendinUrl}>
+                          Your browser does not support the audio element.
+                        </audio>
+                      ) : (
+                        <div className="text-sm text-gray-500 italic py-4 text-center">No recording added</div>
+                      )}
+                    </div>
+
+                    {/* Raymond's Recording */}
+                    <div className="bg-gray-50 rounded-lg p-4 border">
+                      <h3 className="text-sm font-semibold mb-2 text-gray-700">Raymond's Recording</h3>
+                      {raymondUrl ? (
+                        <audio controls className="w-full" src={raymondUrl}>
+                          Your browser does not support the audio element.
+                        </audio>
+                      ) : (
+                        <div className="text-sm text-gray-500 italic py-4 text-center">No recording added</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Navigation Arrow - Right (Next) */}
+                <button
+                  onClick={() => setCarouselIndex((prev) => (prev === carouselCovers.length - 1 ? 0 : prev + 1))}
+                  className="hidden md:flex items-center justify-center w-12 h-12 rounded-full bg-gray-200 hover:bg-gray-300 transition-colors self-center"
+                  aria-label="Next song"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+
+                {/* Mobile Navigation */}
+                <div className="flex md:hidden gap-4 w-full justify-center mt-4">
+                  <button
+                    onClick={() => setCarouselIndex((prev) => (prev === 0 ? carouselCovers.length - 1 : prev - 1))}
+                    className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-200 hover:bg-gray-300 transition-colors"
+                    aria-label="Previous song"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <span className="flex items-center text-sm text-gray-600">
+                    {carouselIndex + 1} of {carouselCovers.length}
+                  </span>
+                  <button
+                    onClick={() => setCarouselIndex((prev) => (prev === carouselCovers.length - 1 ? 0 : prev + 1))}
+                    className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-200 hover:bg-gray-300 transition-colors"
+                    aria-label="Next song"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Top 10 Artists */}
