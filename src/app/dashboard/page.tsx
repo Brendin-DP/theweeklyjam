@@ -30,6 +30,8 @@ export default function DashboardPage() {
   const [carouselCovers, setCarouselCovers] = useState<any[]>([]);
   const [carouselRecordings, setCarouselRecordings] = useState<Map<string | number, { brendin?: any; raymond?: any }>>(new Map());
   const [carouselIndex, setCarouselIndex] = useState(0);
+  const [carouselArtistOccurrences, setCarouselArtistOccurrences] = useState<Map<string, number>>(new Map());
+  const [loadingOccurrences, setLoadingOccurrences] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -255,6 +257,42 @@ useEffect(() => {
 
     fetchDashboardData();
   }, []);
+
+  // Lazy load artist occurrence when carousel index changes
+  useEffect(() => {
+    if (carouselCovers.length > 0 && carouselCovers[carouselIndex]) {
+      const currentCover = carouselCovers[carouselIndex];
+      const artist = currentCover.artist;
+      
+      // Only fetch if we don't already have this artist's occurrence count
+      if (artist && !carouselArtistOccurrences.has(artist) && !loadingOccurrences.has(artist)) {
+        setLoadingOccurrences((prev) => new Set(prev).add(artist));
+        
+        (async () => {
+          try {
+            const { count } = await supabase
+              .from("covers")
+              .select("id", { count: "exact", head: true })
+              .eq("artist", artist);
+            
+            setCarouselArtistOccurrences((prev) => {
+              const newMap = new Map(prev);
+              newMap.set(artist, count || 0);
+              return newMap;
+            });
+          } catch (error) {
+            console.error("Error fetching artist occurrence:", error);
+          } finally {
+            setLoadingOccurrences((prev) => {
+              const newSet = new Set(prev);
+              newSet.delete(artist);
+              return newSet;
+            });
+          }
+        })();
+      }
+    }
+  }, [carouselIndex, carouselCovers, carouselArtistOccurrences, loadingOccurrences]);
 
   if (loading) {
     return <div className="text-center py-8">Loading dashboard...</div>;
@@ -505,8 +543,17 @@ useEffect(() => {
                 {/* Song Details and Recordings */}
                 <div className="flex-1 flex flex-col gap-4">
                   <div>
-                    <div className="text-2xl font-bold">#{currentCover.song_number} - {currentCover.title}</div>
-                    <div className="text-lg text-gray-600">{currentCover.artist}</div>
+                    <span className="inline-block rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 mb-2">#{currentCover.song_number}</span>
+                    <h2 className="text-xl font-semibold mb-1">{currentCover.title}</h2>
+                    <p className="text-gray-700 mb-1">Artist: {currentCover.artist}</p>
+                    {(() => {
+                      const occurrences = carouselArtistOccurrences.get(currentCover.artist) || 0;
+                      return occurrences > 0 ? (
+                        <span className="inline-block rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
+                          Artist occurrences: {occurrences}
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
 
                   {/* Recordings Section */}
@@ -518,6 +565,13 @@ useEffect(() => {
                         <audio controls className="w-full" src={brendinUrl}>
                           Your browser does not support the audio element.
                         </audio>
+                      ) : user?.id === brendinId ? (
+                        <Link
+                          href={`/covers/${currentCover.id}`}
+                          className="block w-full rounded-md bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                        >
+                          Submit Cover
+                        </Link>
                       ) : (
                         <div className="text-sm text-gray-500 italic py-4 text-center">No recording added</div>
                       )}
@@ -530,6 +584,13 @@ useEffect(() => {
                         <audio controls className="w-full" src={raymondUrl}>
                           Your browser does not support the audio element.
                         </audio>
+                      ) : user?.id === raymondId ? (
+                        <Link
+                          href={`/covers/${currentCover.id}`}
+                          className="block w-full rounded-md bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                        >
+                          Submit Cover
+                        </Link>
                       ) : (
                         <div className="text-sm text-gray-500 italic py-4 text-center">No recording added</div>
                       )}
