@@ -27,6 +27,12 @@ export default function DashboardPage() {
   const [showFeaturedDeleteConfirm, setShowFeaturedDeleteConfirm] = useState(false);
   const [bothUsersSubmitted, setBothUsersSubmitted] = useState(false);
   const [featuredHasRecordings, setFeaturedHasRecordings] = useState(false);
+  const [featuredRecordings, setFeaturedRecordings] = useState<{ brendin?: any; raymond?: any }>({});
+  const [carouselCovers, setCarouselCovers] = useState<any[]>([]);
+  const [carouselRecordings, setCarouselRecordings] = useState<Map<string | number, { brendin?: any; raymond?: any }>>(new Map());
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const [carouselArtistOccurrences, setCarouselArtistOccurrences] = useState<Map<string, number>>(new Map());
+  const [loadingOccurrences, setLoadingOccurrences] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -156,16 +162,29 @@ useEffect(() => {
           try {
             const { data: recs } = await supabase
               .from('recordings')
-              .select('user_id')
-              .eq('cover_id', activeCovers[0].id);
+              .select('id, user_id, mp3_url')
+              .eq('cover_id', activeCovers[0].id)
+              .not('mp3_url', 'eq', 'no-audio-uploaded');
             const submittedUserIds = new Set((recs || []).map((r: any) => r.user_id));
             const brendinId = '10167d94-8c45-45a9-9ff0-b07bbc59ee7f';
             const raymondId = 'd10577b4-91a2-4aaf-b0bd-20b126978545';
             setBothUsersSubmitted(submittedUserIds.has(brendinId) && submittedUserIds.has(raymondId));
             setFeaturedHasRecordings((recs || []).length > 0);
+            
+            // Store recordings for featured cover
+            const recordingsMap: { brendin?: any; raymond?: any } = {};
+            recs?.forEach((rec: any) => {
+              if (rec.user_id === brendinId) {
+                recordingsMap.brendin = rec;
+              } else if (rec.user_id === raymondId) {
+                recordingsMap.raymond = rec;
+              }
+            });
+            setFeaturedRecordings(recordingsMap);
           } catch {
             setBothUsersSubmitted(false);
             setFeaturedHasRecordings(false);
+            setFeaturedRecordings({});
           }
         } else {
           // Fallback: last completed song when no active exists
@@ -185,22 +204,76 @@ useEffect(() => {
             try {
               const { data: recs } = await supabase
                 .from('recordings')
-                .select('user_id')
-                .eq('cover_id', completed[0].id);
+                .select('id, user_id, mp3_url')
+                .eq('cover_id', completed[0].id)
+                .not('mp3_url', 'eq', 'no-audio-uploaded');
               const submittedUserIds = new Set((recs || []).map((r: any) => r.user_id));
               const brendinId = '10167d94-8c45-45a9-9ff0-b07bbc59ee7f';
               const raymondId = 'd10577b4-91a2-4aaf-b0bd-20b126978545';
               setBothUsersSubmitted(submittedUserIds.has(brendinId) && submittedUserIds.has(raymondId));
               setFeaturedHasRecordings((recs || []).length > 0);
+              
+              // Store recordings for featured cover
+              const recordingsMap: { brendin?: any; raymond?: any } = {};
+              recs?.forEach((rec: any) => {
+                if (rec.user_id === brendinId) {
+                  recordingsMap.brendin = rec;
+                } else if (rec.user_id === raymondId) {
+                  recordingsMap.raymond = rec;
+                }
+              });
+              setFeaturedRecordings(recordingsMap);
             } catch {
               setBothUsersSubmitted(false);
               setFeaturedHasRecordings(false);
+              setFeaturedRecordings({});
             }
           } else {
             setFeaturedCover(null);
             setFeaturedArtistOccurrences(0);
             setBothUsersSubmitted(false);
             setFeaturedHasRecordings(false);
+            setFeaturedRecordings({});
+          }
+        }
+
+        // Fetch all covers for carousel (latest first)
+        const { data: allCovers } = await supabase
+          .from("covers")
+          .select("id, song_number, title, artist, album_art_url")
+          .order("song_number", { ascending: false });
+        
+        if (allCovers) {
+          setCarouselCovers(allCovers);
+          
+          // Fetch all recordings for these covers
+          const coverIds = allCovers.map(c => c.id);
+          if (coverIds.length > 0) {
+            const { data: allRecordings } = await supabase
+              .from("recordings")
+              .select("id, cover_id, user_id, mp3_url")
+              .in("cover_id", coverIds)
+              .not("mp3_url", "eq", "no-audio-uploaded");
+            
+            if (allRecordings) {
+              const brendinId = "10167d94-8c45-45a9-9ff0-b07bbc59ee7f";
+              const raymondId = "d10577b4-91a2-4aaf-b0bd-20b126978545";
+              const recordingsMap = new Map<string | number, { brendin?: any; raymond?: any }>();
+              
+              allRecordings.forEach((rec: any) => {
+                if (!recordingsMap.has(rec.cover_id)) {
+                  recordingsMap.set(rec.cover_id, {});
+                }
+                const coverRecordings = recordingsMap.get(rec.cover_id)!;
+                if (rec.user_id === brendinId) {
+                  coverRecordings.brendin = rec;
+                } else if (rec.user_id === raymondId) {
+                  coverRecordings.raymond = rec;
+                }
+              });
+              
+              setCarouselRecordings(recordingsMap);
+            }
           }
         }
       } catch (error) {
@@ -213,6 +286,42 @@ useEffect(() => {
     fetchDashboardData();
   }, []);
 
+  // Lazy load artist occurrence when carousel index changes
+  useEffect(() => {
+    if (carouselCovers.length > 0 && carouselCovers[carouselIndex]) {
+      const currentCover = carouselCovers[carouselIndex];
+      const artist = currentCover.artist;
+      
+      // Only fetch if we don't already have this artist's occurrence count
+      if (artist && !carouselArtistOccurrences.has(artist) && !loadingOccurrences.has(artist)) {
+        setLoadingOccurrences((prev) => new Set(prev).add(artist));
+        
+        (async () => {
+          try {
+            const { count } = await supabase
+              .from("covers")
+              .select("id", { count: "exact", head: true })
+              .eq("artist", artist);
+            
+            setCarouselArtistOccurrences((prev) => {
+              const newMap = new Map(prev);
+              newMap.set(artist, count || 0);
+              return newMap;
+            });
+          } catch (error) {
+            console.error("Error fetching artist occurrence:", error);
+          } finally {
+            setLoadingOccurrences((prev) => {
+              const newSet = new Set(prev);
+              newSet.delete(artist);
+              return newSet;
+            });
+          }
+        })();
+      }
+    }
+  }, [carouselIndex, carouselCovers, carouselArtistOccurrences, loadingOccurrences]);
+
   if (loading) {
     return <div className="text-center py-8">Loading dashboard...</div>;
   }
@@ -222,83 +331,269 @@ useEffect(() => {
       <h1 className="text-2xl font-semibold mb-6">
         Welcome to your Dashboard, {profile?.display_name || user?.email}
       </h1>
-      {/* Featured Song (Active) */}
-      <div className="mb-6 rounded-lg border bg-white p-6 shadow-md">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Featured Song</h2>
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="h-20 w-20 overflow-hidden rounded-md border bg-gray-100">
-              {(() => {
-                const raw = featuredCover?.album_art_url as string | null | undefined;
-                if (!raw) return null;
-                const url = typeof raw === 'string' && (raw.startsWith('http://') || raw.startsWith('https://'))
-                  ? raw
-                  : supabase.storage.from('album-art').getPublicUrl(String(raw)).data.publicUrl;
-                if (!url) return null;
-                return <img src={url} alt="album art" className="h-full w-full object-cover" />;
-              })()}
-            </div>
-            <div>
-              <div className="mb-1 flex items-center gap-2">
-                <span className="inline-block rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">#{featuredCover?.song_number ?? '—'}</span>
-                <h2 className="text-xl font-semibold">{featuredCover?.title ?? 'No Planned song'}</h2>
-              </div>
-              <p className="text-gray-700">Artist: {featuredCover?.artist ?? '—'}</p>
-              {featuredCover && (
-                <p className="text-xs text-gray-500 mt-1">Artist occurrences: {featuredArtistOccurrences}</p>
-              )}
-              
-            </div>
-          </div>
-          <div className="relative flex items-center gap-2">
-            {!bothUsersSubmitted && (
-              <Link
-                href={featuredCover ? `/covers/${featuredCover.id}` : "#"}
-                className={`rounded-md px-3 py-2 text-sm font-medium shadow-sm ${featuredCover ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-600 cursor-not-allowed pointer-events-none'}`}
-                title={featuredCover ? 'Submit Cover' : 'No active song'}
+      {/* Featured Song (Active) - Carousel Style */}
+      {featuredCover && (() => {
+        // Find the index of the featured cover in the carousel covers
+        const featuredIndex = carouselCovers.findIndex(c => c.id === featuredCover.id);
+        // Left arrow decrements song_number (goes to older songs = higher index in descending array)
+        // Right arrow increments song_number (goes to newer songs = lower index in descending array)
+        const canGoPrevious = featuredIndex >= 0 && featuredIndex < carouselCovers.length - 1;
+        const canGoNext = featuredIndex > 0;
+        
+        const handlePrevious = async () => {
+          if (!canGoPrevious || featuredIndex < 0 || featuredIndex >= carouselCovers.length - 1) return;
+          const previousCover = carouselCovers[featuredIndex + 1]; // Older song (higher index)
+          
+          // Update featured cover and all related state
+          setFeaturedCover(previousCover);
+          
+          // Fetch artist occurrences
+          const { count } = await supabase
+            .from("covers")
+            .select("id", { count: "exact", head: true })
+            .eq("artist", previousCover.artist);
+          setFeaturedArtistOccurrences(count || 0);
+          
+          // Fetch recordings
+          try {
+            const { data: recs } = await supabase
+              .from('recordings')
+              .select('id, user_id, mp3_url')
+              .eq('cover_id', previousCover.id)
+              .not('mp3_url', 'eq', 'no-audio-uploaded');
+            const submittedUserIds = new Set((recs || []).map((r: any) => r.user_id));
+            const brendinId = '10167d94-8c45-45a9-9ff0-b07bbc59ee7f';
+            const raymondId = 'd10577b4-91a2-4aaf-b0bd-20b126978545';
+            setBothUsersSubmitted(submittedUserIds.has(brendinId) && submittedUserIds.has(raymondId));
+            setFeaturedHasRecordings((recs || []).length > 0);
+            
+            // Store recordings
+            const recordingsMap: { brendin?: any; raymond?: any } = {};
+            recs?.forEach((rec: any) => {
+              if (rec.user_id === brendinId) {
+                recordingsMap.brendin = rec;
+              } else if (rec.user_id === raymondId) {
+                recordingsMap.raymond = rec;
+              }
+            });
+            setFeaturedRecordings(recordingsMap);
+          } catch {
+            setBothUsersSubmitted(false);
+            setFeaturedHasRecordings(false);
+            setFeaturedRecordings({});
+          }
+        };
+        
+        const handleNext = async () => {
+          if (!canGoNext || featuredIndex <= 0) return;
+          const nextCover = carouselCovers[featuredIndex - 1]; // Newer song (lower index)
+          
+          // Update featured cover and all related state
+          setFeaturedCover(nextCover);
+          
+          // Fetch artist occurrences
+          const { count } = await supabase
+            .from("covers")
+            .select("id", { count: "exact", head: true })
+            .eq("artist", nextCover.artist);
+          setFeaturedArtistOccurrences(count || 0);
+          
+          // Fetch recordings
+          try {
+            const { data: recs } = await supabase
+              .from('recordings')
+              .select('id, user_id, mp3_url')
+              .eq('cover_id', nextCover.id)
+              .not('mp3_url', 'eq', 'no-audio-uploaded');
+            const submittedUserIds = new Set((recs || []).map((r: any) => r.user_id));
+            const brendinId = '10167d94-8c45-45a9-9ff0-b07bbc59ee7f';
+            const raymondId = 'd10577b4-91a2-4aaf-b0bd-20b126978545';
+            setBothUsersSubmitted(submittedUserIds.has(brendinId) && submittedUserIds.has(raymondId));
+            setFeaturedHasRecordings((recs || []).length > 0);
+            
+            // Store recordings
+            const recordingsMap: { brendin?: any; raymond?: any } = {};
+            recs?.forEach((rec: any) => {
+              if (rec.user_id === brendinId) {
+                recordingsMap.brendin = rec;
+              } else if (rec.user_id === raymondId) {
+                recordingsMap.raymond = rec;
+              }
+            });
+            setFeaturedRecordings(recordingsMap);
+          } catch {
+            setBothUsersSubmitted(false);
+            setFeaturedHasRecordings(false);
+            setFeaturedRecordings({});
+          }
+        };
+        
+        // Determine title: if it's the last/newest song (index 0), show "Featured Song", otherwise "Previous Cover"
+        const isLatestSong = featuredIndex === 0;
+        const panelTitle = isLatestSong ? "Featured Song" : "Previous Cover";
+        
+        return (
+        <div className="mb-6 rounded-lg border bg-white p-6 shadow-md">
+          <div className="mb-6 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">{panelTitle}</h2>
+            <div className="relative flex items-center gap-2">
+              {/* Navigation Arrows */}
+              <button
+                type="button"
+                onClick={handlePrevious}
+                disabled={!canGoPrevious}
+                className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Previous song"
+                title="Previous song"
               >
-                Submit Cover
-              </Link>
-            )}
-            {featuredCover?.song_status === 'completed' && (
-              <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-700">
-                Song completed
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => setIsFeaturedMenuOpen((v) => !v)}
-              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-sm shadow-sm hover:bg-gray-50"
-              disabled={!featuredCover}
-              title={!featuredCover ? 'No Planned song' : 'Actions'}
-            >
-              •••
-            </button>
-            {isFeaturedMenuOpen && featuredCover && (
-              <div className="absolute right-0 z-10 mt-1 w-32 origin-top-right rounded-md border border-gray-200 bg-white shadow-lg">
-                <a
-                  href={`/covers/${featuredCover.id}`}
-                  className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
-                >
-                  Edit
-                </a>
-                <div className="border-t border-gray-200" />
-                <button
-                  type="button"
-                  onClick={() => { if (!featuredHasRecordings) { setIsFeaturedMenuOpen(false); setShowFeaturedDeleteConfirm(true); } }}
-                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-red-50 ${featuredHasRecordings ? 'text-gray-400 cursor-not-allowed hover:bg-white' : 'text-red-600'}`}
-                  title={featuredHasRecordings ? 'Covers uploaded, cannot delete' : 'Delete'}
-                  disabled={featuredHasRecordings}
-                >
-                  Delete
-                </button>
-              </div>
-            )}
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={!canGoNext}
+                className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Next song"
+                title="Next song"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              {featuredCover.song_status === 'completed' && (
+                <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-700">
+                  Song completed
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsFeaturedMenuOpen((v) => !v)}
+                className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2 py-1 text-sm shadow-sm hover:bg-gray-50"
+                title="Actions"
+              >
+                •••
+              </button>
+              {isFeaturedMenuOpen && (
+                <div className="absolute right-0 z-10 mt-1 w-32 origin-top-right rounded-md border border-gray-200 bg-white shadow-lg">
+                  <a
+                    href={`/covers/${featuredCover.id}`}
+                    className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                  >
+                    Edit
+                  </a>
+                  <div className="border-t border-gray-200" />
+                  <button
+                    type="button"
+                    onClick={() => { if (!featuredHasRecordings) { setIsFeaturedMenuOpen(false); setShowFeaturedDeleteConfirm(true); } }}
+                    className={`block w-full px-3 py-2 text-left text-sm hover:bg-red-50 ${featuredHasRecordings ? 'text-gray-400 cursor-not-allowed hover:bg-white' : 'text-red-600'}`}
+                    title={featuredHasRecordings ? 'Covers uploaded, cannot delete' : 'Delete'}
+                    disabled={featuredHasRecordings}
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
+          
+          {(() => {
+            const brendinId = "10167d94-8c45-45a9-9ff0-b07bbc59ee7f";
+            const raymondId = "d10577b4-91a2-4aaf-b0bd-20b126978545";
+            
+            const albumArtUrl = (() => {
+              const raw = featuredCover.album_art_url as string | null | undefined;
+              if (!raw) return null;
+              if (typeof raw === 'string' && (raw.startsWith('http://') || raw.startsWith('https://'))) {
+                return raw;
+              }
+              return supabase.storage.from('album-art').getPublicUrl(String(raw)).data.publicUrl;
+            })();
+
+            const getRecordingUrl = (recording: any) => {
+              if (!recording || !recording.mp3_url) return null;
+              return supabase.storage.from('recordings-media').getPublicUrl(recording.mp3_url).data.publicUrl;
+            };
+
+            const brendinUrl = featuredRecordings.brendin ? getRecordingUrl(featuredRecordings.brendin) : null;
+            const raymondUrl = featuredRecordings.raymond ? getRecordingUrl(featuredRecordings.raymond) : null;
+
+            return (
+              <div className="flex flex-col md:flex-row gap-6 items-center">
+                {/* Album Art */}
+                <div className="flex-shrink-0">
+                  <div className="w-64 h-64 rounded-lg overflow-hidden border bg-gray-100 shadow-lg">
+                    {albumArtUrl ? (
+                      <img src={albumArtUrl} alt={`${featuredCover.title} album art`} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-400">
+                        No Album Art
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Song Details and Recordings */}
+                <div className="flex-1 flex flex-col gap-4">
+                  <div>
+                    <span className="inline-block rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 mb-2">#{featuredCover.song_number}</span>
+                    <h2 className="text-xl font-semibold mb-1">{featuredCover.title}</h2>
+                    <p className="text-gray-700 mb-1">Artist: {featuredCover.artist}</p>
+                    {featuredArtistOccurrences > 0 && (
+                      <span className="inline-block rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
+                        Artist occurrences: {featuredArtistOccurrences}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Recordings Section */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    {/* Brendin's Recording */}
+                    <div className="bg-gray-50 rounded-lg p-4 border">
+                      <h3 className="text-sm font-semibold mb-2 text-gray-700">Brendin's Recording</h3>
+                      {brendinUrl ? (
+                        <audio controls className="w-full" src={brendinUrl}>
+                          Your browser does not support the audio element.
+                        </audio>
+                      ) : user?.id === brendinId ? (
+                        <Link
+                          href={`/covers/${featuredCover.id}`}
+                          className="block w-full rounded-md bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                        >
+                          Submit Cover
+                        </Link>
+                      ) : (
+                        <div className="text-sm text-gray-500 italic py-4 text-center">No recording added</div>
+                      )}
+                    </div>
+
+                    {/* Raymond's Recording */}
+                    <div className="bg-gray-50 rounded-lg p-4 border">
+                      <h3 className="text-sm font-semibold mb-2 text-gray-700">Raymond's Recording</h3>
+                      {raymondUrl ? (
+                        <audio controls className="w-full" src={raymondUrl}>
+                          Your browser does not support the audio element.
+                        </audio>
+                      ) : user?.id === raymondId ? (
+                        <Link
+                          href={`/covers/${featuredCover.id}`}
+                          className="block w-full rounded-md bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                        >
+                          Submit Cover
+                        </Link>
+                      ) : (
+                        <div className="text-sm text-gray-500 italic py-4 text-center">No recording added</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
-      </div>
+        );
+      })()}
 
       {/* Delete confirmation for featured */}
       {showFeaturedDeleteConfirm && featuredCover && (
@@ -343,16 +638,29 @@ useEffect(() => {
                         try {
                           const { data: recs } = await supabase
                             .from('recordings')
-                            .select('user_id')
-                            .eq('cover_id', planned[0].id);
+                            .select('id, user_id, mp3_url')
+                            .eq('cover_id', planned[0].id)
+                            .not('mp3_url', 'eq', 'no-audio-uploaded');
                           const submittedUserIds = new Set((recs || []).map((r: any) => r.user_id));
                           const brendinId = '10167d94-8c45-45a9-9ff0-b07bbc59ee7f';
                           const raymondId = 'd10577b4-91a2-4aaf-b0bd-20b126978545';
                           setBothUsersSubmitted(submittedUserIds.has(brendinId) && submittedUserIds.has(raymondId));
                           setFeaturedHasRecordings((recs || []).length > 0);
+                          
+                          // Store recordings for featured cover
+                          const recordingsMap: { brendin?: any; raymond?: any } = {};
+                          recs?.forEach((rec: any) => {
+                            if (rec.user_id === brendinId) {
+                              recordingsMap.brendin = rec;
+                            } else if (rec.user_id === raymondId) {
+                              recordingsMap.raymond = rec;
+                            }
+                          });
+                          setFeaturedRecordings(recordingsMap);
                         } catch {
                           setBothUsersSubmitted(false);
                           setFeaturedHasRecordings(false);
+                          setFeaturedRecordings({});
                         }
                       } else {
                         // fallback to last completed
@@ -372,22 +680,36 @@ useEffect(() => {
                           try {
                             const { data: recs } = await supabase
                               .from('recordings')
-                              .select('user_id')
-                              .eq('cover_id', completed[0].id);
+                              .select('id, user_id, mp3_url')
+                              .eq('cover_id', completed[0].id)
+                              .not('mp3_url', 'eq', 'no-audio-uploaded');
                             const submittedUserIds = new Set((recs || []).map((r: any) => r.user_id));
                             const brendinId = '10167d94-8c45-45a9-9ff0-b07bbc59ee7f';
                             const raymondId = 'd10577b4-91a2-4aaf-b0bd-20b126978545';
                             setBothUsersSubmitted(submittedUserIds.has(brendinId) && submittedUserIds.has(raymondId));
                             setFeaturedHasRecordings((recs || []).length > 0);
+                            
+                            // Store recordings for featured cover
+                            const recordingsMap: { brendin?: any; raymond?: any } = {};
+                            recs?.forEach((rec: any) => {
+                              if (rec.user_id === brendinId) {
+                                recordingsMap.brendin = rec;
+                              } else if (rec.user_id === raymondId) {
+                                recordingsMap.raymond = rec;
+                              }
+                            });
+                            setFeaturedRecordings(recordingsMap);
                           } catch {
                             setBothUsersSubmitted(false);
                             setFeaturedHasRecordings(false);
+                            setFeaturedRecordings({});
                           }
                         } else {
                           setFeaturedCover(null);
                           setFeaturedArtistOccurrences(0);
                           setBothUsersSubmitted(false);
                           setFeaturedHasRecordings(false);
+                          setFeaturedRecordings({});
                         }
                       }
                       setShowFeaturedDeleteConfirm(false);
@@ -405,7 +727,6 @@ useEffect(() => {
           </div>
         </div>
       )}
-      
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Top 10 Artists */}
