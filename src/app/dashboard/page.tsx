@@ -428,10 +428,14 @@ useEffect(() => {
           }
         };
         
+        // Determine title: if it's the last/newest song (index 0), show "Featured Song", otherwise "Previous Cover"
+        const isLatestSong = featuredIndex === 0;
+        const panelTitle = isLatestSong ? "Featured Song" : "Previous Cover";
+        
         return (
         <div className="mb-6 rounded-lg border bg-white p-6 shadow-md">
           <div className="mb-6 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Featured Song</h2>
+            <h2 className="text-lg font-semibold">{panelTitle}</h2>
             <div className="relative flex items-center gap-2">
               {/* Navigation Arrows */}
               <button
@@ -721,158 +725,6 @@ useEffect(() => {
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Song Carousel */}
-      {carouselCovers.length > 0 && (
-        <div className="mb-6 rounded-lg border bg-white p-6 shadow-md">
-          <h2 className="text-lg font-semibold mb-6">Song Carousel</h2>
-          {carouselCovers[carouselIndex] && (() => {
-            const currentCover = carouselCovers[carouselIndex];
-            const recordings = carouselRecordings.get(currentCover.id) || {};
-            const brendinId = "10167d94-8c45-45a9-9ff0-b07bbc59ee7f";
-            const raymondId = "d10577b4-91a2-4aaf-b0bd-20b126978545";
-            
-            const albumArtUrl = (() => {
-              const raw = currentCover.album_art_url as string | null | undefined;
-              if (!raw) return null;
-              if (typeof raw === 'string' && (raw.startsWith('http://') || raw.startsWith('https://'))) {
-                return raw;
-              }
-              return supabase.storage.from('album-art').getPublicUrl(String(raw)).data.publicUrl;
-            })();
-
-            const getRecordingUrl = (recording: any) => {
-              if (!recording || !recording.mp3_url) return null;
-              return supabase.storage.from('recordings-media').getPublicUrl(recording.mp3_url).data.publicUrl;
-            };
-
-            const brendinUrl = recordings.brendin ? getRecordingUrl(recordings.brendin) : null;
-            const raymondUrl = recordings.raymond ? getRecordingUrl(recordings.raymond) : null;
-
-            return (
-              <div className="flex flex-col md:flex-row gap-6 items-center">
-                {/* Navigation Arrow - Left (Previous) */}
-                <button
-                  onClick={() => setCarouselIndex((prev) => (prev === 0 ? carouselCovers.length - 1 : prev - 1))}
-                  className="hidden md:flex items-center justify-center w-12 h-12 rounded-full bg-gray-200 hover:bg-gray-300 transition-colors self-center"
-                  aria-label="Previous song"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-
-                {/* Album Art */}
-                <div className="flex-shrink-0">
-                  <div className="w-64 h-64 rounded-lg overflow-hidden border bg-gray-100 shadow-lg">
-                    {albumArtUrl ? (
-                      <img src={albumArtUrl} alt={`${currentCover.title} album art`} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-400">
-                        No Album Art
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Song Details and Recordings */}
-                <div className="flex-1 flex flex-col gap-4">
-                  <div>
-                    <span className="inline-block rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 mb-2">#{currentCover.song_number}</span>
-                    <h2 className="text-xl font-semibold mb-1">{currentCover.title}</h2>
-                    <p className="text-gray-700 mb-1">Artist: {currentCover.artist}</p>
-                    {(() => {
-                      const occurrences = carouselArtistOccurrences.get(currentCover.artist) || 0;
-                      return occurrences > 0 ? (
-                        <span className="inline-block rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
-                          Artist occurrences: {occurrences}
-                        </span>
-                      ) : null;
-                    })()}
-                  </div>
-
-                  {/* Recordings Section */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                    {/* Brendin's Recording */}
-                    <div className="bg-gray-50 rounded-lg p-4 border">
-                      <h3 className="text-sm font-semibold mb-2 text-gray-700">Brendin's Recording</h3>
-                      {brendinUrl ? (
-                        <audio controls className="w-full" src={brendinUrl}>
-                          Your browser does not support the audio element.
-                        </audio>
-                      ) : user?.id === brendinId ? (
-                        <Link
-                          href={`/covers/${currentCover.id}`}
-                          className="block w-full rounded-md bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-                        >
-                          Submit Cover
-                        </Link>
-                      ) : (
-                        <div className="text-sm text-gray-500 italic py-4 text-center">No recording added</div>
-                      )}
-                    </div>
-
-                    {/* Raymond's Recording */}
-                    <div className="bg-gray-50 rounded-lg p-4 border">
-                      <h3 className="text-sm font-semibold mb-2 text-gray-700">Raymond's Recording</h3>
-                      {raymondUrl ? (
-                        <audio controls className="w-full" src={raymondUrl}>
-                          Your browser does not support the audio element.
-                        </audio>
-                      ) : user?.id === raymondId ? (
-                        <Link
-                          href={`/covers/${currentCover.id}`}
-                          className="block w-full rounded-md bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-                        >
-                          Submit Cover
-                        </Link>
-                      ) : (
-                        <div className="text-sm text-gray-500 italic py-4 text-center">No recording added</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Navigation Arrow - Right (Next) */}
-                <button
-                  onClick={() => setCarouselIndex((prev) => (prev === carouselCovers.length - 1 ? 0 : prev + 1))}
-                  className="hidden md:flex items-center justify-center w-12 h-12 rounded-full bg-gray-200 hover:bg-gray-300 transition-colors self-center"
-                  aria-label="Next song"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-
-                {/* Mobile Navigation */}
-                <div className="flex md:hidden gap-4 w-full justify-center mt-4">
-                  <button
-                    onClick={() => setCarouselIndex((prev) => (prev === 0 ? carouselCovers.length - 1 : prev - 1))}
-                    className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-200 hover:bg-gray-300 transition-colors"
-                    aria-label="Previous song"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
-                  <span className="flex items-center text-sm text-gray-600">
-                    {carouselIndex + 1} of {carouselCovers.length}
-                  </span>
-                  <button
-                    onClick={() => setCarouselIndex((prev) => (prev === carouselCovers.length - 1 ? 0 : prev + 1))}
-                    className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-200 hover:bg-gray-300 transition-colors"
-                    aria-label="Next song"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            );
-          })()}
         </div>
       )}
 
