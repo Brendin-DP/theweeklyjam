@@ -34,6 +34,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <Link href="/dashboard" className="hover:text-gray-300">Dashboard</Link>
                 <Link href="/covers" className="hover:text-gray-300">Covers</Link>
                 <Link href="/settings" className="hover:text-gray-300">Settings</Link>
+                <Link href="/admin" className="hover:text-gray-300">Admin</Link>
               </nav>
             </aside>
             <main className="flex-1 p-8 bg-gray-50">{children}</main>
