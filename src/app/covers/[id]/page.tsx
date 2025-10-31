@@ -30,6 +30,8 @@ export default function CoverDetailPage({ params }: { params: { id: string } }) 
   const [isDeletingRec, setIsDeletingRec] = useState(false);
   const [deletingRecording, setDeletingRecording] = useState<RecordingWithDetails | null>(null);
   const [deleteRecError, setDeleteRecError] = useState<string | null>(null);
+  // For album art deletion
+  const [isDeletingArt, setIsDeletingArt] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -307,9 +309,67 @@ if (!coverData.album_art_url && coverData.artist && coverData.title) {
     <div>
       <div className="mb-6 rounded-lg border bg-white p-6 shadow-md">
         <div className="flex items-start gap-6">
-          <div className="h-32 w-32 flex-shrink-0 overflow-hidden rounded-md border bg-gray-100">
+          <div className="h-32 w-32 flex-shrink-0 overflow-hidden rounded-md border bg-gray-100 relative">
             {albumArtDisplayUrl ? (
-              <img src={albumArtDisplayUrl} alt={`${cover.title} album art`} className="h-full w-full object-cover" />
+              <>
+                <img src={albumArtDisplayUrl} alt={`${cover.title} album art`} className="h-full w-full object-cover" />
+                {/* Delete button overlay */}
+                <button
+                  onClick={async () => {
+                    if (!cover || isDeletingArt) return;
+                    setIsDeletingArt(true);
+
+                    try {
+                      // Remove file from storage (filename is coverId.jpg)
+                      const fileName = `${cover.id}.jpg`;
+                      const { error: storageError } = await supabase
+                        .storage
+                        .from("album-art")
+                        .remove([fileName]);
+
+                      if (storageError) {
+                        console.warn("Storage delete error (may not exist):", storageError);
+                      }
+
+                      // Set album_art_url to null
+                      const { error: dbError } = await supabase
+                        .from("covers")
+                        .update({ album_art_url: null })
+                        .eq("id", cover.id);
+
+                      if (dbError) {
+                        console.error("DB update error:", dbError);
+                        alert("Failed to clear album art. Try again.");
+                        return;
+                      }
+
+                      // Re-fetch cover
+                      const { data: refreshedCover, error: refreshError } = await supabase
+                        .from("covers")
+                        .select("*")
+                        .eq("id", cover.id)
+                        .single();
+
+                      if (refreshError) {
+                        console.error("Failed to refresh cover:", refreshError);
+                      } else if (refreshedCover) {
+                        setCover(refreshedCover);
+                      }
+                    } catch (err) {
+                      console.error("Unexpected error deleting album art:", err);
+                    } finally {
+                      setIsDeletingArt(false);
+                    }
+                  }}
+                  disabled={isDeletingArt}
+                  className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-1.5 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md z-10"
+                  title="Delete thumbnail"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </>
             ) : (
               <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">No Art</div>
             )}
